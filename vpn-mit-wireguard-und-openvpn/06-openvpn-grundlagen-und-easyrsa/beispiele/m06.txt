@@ -1,0 +1,103 @@
+# Testumgebung: EasyRSA 3.1.7 (Ubuntu-Paket); Pfad durch /etc/openvpn/easy-rsa ersetzt; Ausgaben gekürzt (tail)
+Your newly created PKI dir is:
+* /etc/openvpn/easy-rsa/pki
+
+Using Easy-RSA configuration:
+* undefined
+
+---
+into your certificate request.
+What you are about to enter is what is called a Distinguished Name or a DN.
+There are quite a few fields but you can leave some blank
+For some fields there will be a default value,
+If you enter '.', the field will be left blank.
+-----
+Common Name (eg: your user, host, or server name) [Easy-RSA CA]:
+Notice
+------
+CA creation complete. Your new CA certificate is at:
+* /etc/openvpn/easy-rsa/pki/ca.crt
+
+---
+If you enter '.', the field will be left blank.
+-----
+Common Name (eg: your user, host, or server name) [server]:
+Notice
+------
+Private-Key and Public-Certificate-Request files created.
+Your files are:
+* req: /etc/openvpn/easy-rsa/pki/reqs/server.req
+* key: /etc/openvpn/easy-rsa/pki/private/server.key
+
+---
+Check that the request matches the signature
+Signature ok
+The Subject's Distinguished Name is as follows
+commonName            :ASN.1 12:'server'
+Certificate is to be certified until Feb 15 02:26:41 2029 GMT (825 days)
+
+Write out database with 1 new entries
+Database updated
+
+Notice
+------
+Certificate created at:
+* /etc/openvpn/easy-rsa/pki/issued/server.crt
+
+
+Notice
+------
+
+DH parameters of size 2048 created at:
+* /etc/openvpn/easy-rsa/pki/dh.pem
+
+
+real	0m15.630s
+user	0m15.432s
+sys	0m0.188s
+---
+Common Name (eg: your user, host, or server name) [client1]:
+Notice
+------
+Private-Key and Public-Certificate-Request files created.
+Your files are:
+* req: /etc/openvpn/easy-rsa/pki/reqs/client1.req
+* key: /etc/openvpn/easy-rsa/pki/private/client1.key
+
+---
+Certificate is to be certified until Feb 15 02:26:58 2029 GMT (825 days)
+
+Write out database with 1 new entries
+Database updated
+
+Notice
+------
+Certificate created at:
+* /etc/openvpn/easy-rsa/pki/issued/client1.crt
+
+---
+pki/ca.crt
+pki/certs_by_serial/4C11668EA3888430296FA2CB201D7417.pem
+pki/certs_by_serial/D927718CFF140A81A4402AC4D749DCF2.pem
+pki/dh.pem
+pki/index.txt
+pki/index.txt.attr
+pki/index.txt.attr.old
+pki/index.txt.old
+pki/issued/client1.crt
+pki/issued/server.crt
+pki/openssl-easyrsa.cnf
+pki/private/ca.key
+pki/private/client1.key
+pki/private/server.key
+pki/reqs/client1.req
+pki/reqs/server.req
+pki/serial
+pki/serial.old
+---
+subject=CN = client1
+issuer=CN = VPN-Lab-CA
+subject=CN = server
+issuer=CN = VPN-Lab-CA
+X509v3 Extended Key Usage: 
+    TLS Web Server Authentication

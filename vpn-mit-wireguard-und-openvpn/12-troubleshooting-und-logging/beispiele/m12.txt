@@ -1,0 +1,50 @@
+# Testumgebung: Namespaces, wireguard-go, OpenVPN 2.6.19
+### M12.1 tcpdump wg0 (VM 1)
+listening on wg0, link-type RAW (Raw IP), snapshot length 262144 bytes
+IP 10.8.0.100 > 10.8.0.1: ICMP echo request, id 1702, seq 1, length 64
+IP 10.8.0.1 > 10.8.0.100: ICMP echo reply, id 1702, seq 1, length 64
+### M12.1 tcpdump eth0 (WAN) mit -X (erste Zeilen)
+IP 10.0.0.100.33654 > 10.0.0.1.51820: UDP, length 128
+	0x0000:  4500 009c 7bd1 4000 4011 aa1b 0a00 0064  E...{.@.@......d
+	0x0010:  0a00 0001 8376 ca6c 0088 14fe 0400 0000  .....v.l........
+	0x0020:  42be 765c 0200 0000 0000 0000 8882 a692  B.v\............
+	0x0030:  7e1a ffdf 6679 2109 6a61 24ec 34dc a305  ~...fy!.ja$.4...
+	0x0040:  9c40 f519 fc27 b32f 8d25 db12 6139 c72a  .@...'./.%..a9.*
+	0x0050:  656d b4c5 7cc9 a975 a89a 155b ce42 8654  em..|..u...[.B.T
+	0x0060:  81be dfde 1393 1807 7878 632e ab7f c17a  ........xxc....z
+### M12.3 Firewall-Fehler
+2 packets transmitted, 2 received, 0% packet loss, time 1027ms
+2 packets transmitted, 2 received, 0% packet loss, time 1013ms
+-- nach flush forward
+2 packets transmitted, 2 received, 0% packet loss, time 1026ms
+2 packets transmitted, 0 received, 100% packet loss, time 1015ms
+table inet filter {
+	chain forward {
+		type filter hook forward priority filter; policy drop;
+		counter packets 3 bytes 252
+	}
+}
+2 packets transmitted, 2 received, 0% packet loss, time 1023ms
+### M12.4 MTU
+11: wg0: <POINTOPOINT,MULTICAST,NOARP,UP,LOWER_UP> mtu 1420 qdisc pfifo_fast state UNKNOWN mode DEFAULT group default qlen 500
+1400 bytes from 10.8.0.1: icmp_seq=1 ttl=64 time=0.577 ms
+1400 bytes from 10.8.0.1: icmp_seq=2 ttl=64 time=0.558 ms
+PING 10.8.0.1 (10.8.0.1) 1393(1421) bytes of data.
+ping: local error: message too long, mtu=1420
+ping: local error: message too long, mtu=1420
+### M12.5 dynamic_debug
+ls: cannot access '/sys/kernel/debug/dynamic_debug': No such file or directory
+
+### M12.2a falscher tls-crypt-Schluessel
+TLS Error: TLS key negotiation failed to occur within 60 seconds (check your network connectivity)
+TLS Error: TLS handshake failed
+SIGUSR1[soft,tls-error] received, process restarting
+-- Server-Log:
+ROUTE_GATEWAY 0.0.0.0
+Socket Buffers: R=[212992->212992] S=[212992->212992]
+IFCONFIG POOL IPv4: base=10.9.0.2 size=253
+tls-crypt unwrap error: packet authentication failed
+TLS Error: tls-crypt unwrapping failed from [AF_INET]10.0.0.100:43027
+### M12.2b ein Zeichen im Block cert veraendert
+OpenSSL: error:05800074:x509 certificate routines::key values mismatch:
+-- Server-Log: keine Verbindung, kein Eintrag (der Client bricht beim Laden des Profils ab)

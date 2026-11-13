@@ -1,0 +1,24 @@
+# Testumgebung: OpenVPN 2.6.19 im Namespace
+### M10 nur route (ohne iroute)
+192.168.20.1 via 10.9.0.2 dev tun0 src 10.9.0.1 uid 0 
+    cache 
+10.9.0.0/24 dev tun0 proto kernel scope link src 10.9.0.1 
+192.168.20.0/24 via 10.9.0.2 dev tun0 
+-- Ping VM1 -> Site B
+3 packets transmitted, 0 received, 100% packet loss, time 2037ms
+-- Ping VM2 (Quelle Site B) -> Site A
+3 packets transmitted, 0 received, 100% packet loss, time 2035ms
+-- Server-Log
+      1 client1/10.0.0.100:41501 MULTI: Learn: 10.9.0.50 -> client1/10.0.0.100:41501
+### M10 route + iroute
+192.168.20.1 via 10.9.0.2 dev tun0 src 10.9.0.1 uid 0 
+    cache 
+-- Ping VM1 -> Site B
+3 packets transmitted, 3 received, 0% packet loss, time 2026ms
+-- Ping VM2 (Quelle Site B) -> Site A
+3 packets transmitted, 3 received, 0% packet loss, time 2044ms
+client1/10.0.0.100:47159 MULTI: Learn: 10.9.0.50 -> client1/10.0.0.100:47159
+client1/10.0.0.100:47159 MULTI: Learn: 192.168.20.0/24 -> client1/10.0.0.100:47159
+MULTI: Learn: 192.168.20.1 -> client1/10.0.0.100:47159
+
+# Hinweis: Die Meldung 'MULTI: bad source address from client [192.168.20.1], packet dropped' erschien in der Testumgebung bei --verb 6, nicht bei --verb 3.

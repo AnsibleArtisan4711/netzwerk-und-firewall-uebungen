@@ -1,6 +1,6 @@
 # Netzwerk und Firewall: Übungen
 
-Netzwerktechnik, WLAN und Gästenetz. Alles auf Deutsch. Jeder Kurs liegt in einem eigenen Ordner und hat seine eigene README.
+Netzwerktechnik, WLAN, Gästenetz und VPN. Alles auf Deutsch. Jeder Kurs liegt in einem eigenen Ordner und hat seine eigene README.
 
 ## Kurse
 
@@ -8,6 +8,7 @@ Netzwerktechnik, WLAN und Gästenetz. Alles auf Deutsch. Jeder Kurs liegt in ein
 |---|---|---|
 | [packet-tracer](packet-tracer/) | Übungsreihe | Netzwerktechnik mit Packet Tracer, von den Grundlagen bis Routing, Sicherheit, VPN, IPv6 und Fehlersuche |
 | [wlan-gaestenetz](wlan-gaestenetz/) | Übungsreihe | WLAN und Gästenetz: VLANs, Zugriffsregeln, 802.1X |
+| [vpn-mit-wireguard-und-openvpn](vpn-mit-wireguard-und-openvpn/) | Übungsreihe | VPN mit WireGuard und OpenVPN: 12 Module, 82,5 Stunden; in einer Testumgebung teilweise ausgeführt |
 
 ## Lizenz
 

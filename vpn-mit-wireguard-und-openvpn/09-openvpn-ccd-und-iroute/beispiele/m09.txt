@@ -1,0 +1,6 @@
+# Testumgebung: OpenVPN 2.6.19 im Namespace
+### M9 ccd + ifconfig-push
+tun0             UNKNOWN        10.9.0.50/24 
+2 packets transmitted, 2 received, 0% packet loss, time 1026ms
+### M9 ccd mit falschem Dateinamen (Client1)
+tun0             UNKNOWN        10.9.0.2/24 

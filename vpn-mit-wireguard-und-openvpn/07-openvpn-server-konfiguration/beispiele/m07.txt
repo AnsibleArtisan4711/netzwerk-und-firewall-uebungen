@@ -1,0 +1,7 @@
+# Testumgebung: OpenVPN 2.6.19 im Namespace, ohne systemd
+### M7 ta.key
+ta.key erzeugt: #
+### M7 Verifikation
+State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess
+UNCONN 0      0            0.0.0.0:1194      0.0.0.0:*          
+tun0             UNKNOWN        10.9.0.1/24 

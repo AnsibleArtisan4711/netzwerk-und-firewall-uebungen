@@ -1,0 +1,25 @@
+# Testumgebung: Namespaces, wireguard-go (siehe Modul-README)
+### M4 Split Tunnel
+2 packets transmitted, 2 received, 0% packet loss, time 1002ms
+2 packets transmitted, 2 received, 0% packet loss, time 1016ms
+interface: wg0
+peer: <Public Key des Clients>
+  endpoint: 10.0.0.100:44321
+  allowed ips: 10.8.0.100/32
+  latest handshake: 2 seconds ago
+  transfer: 660 B received, 604 B sent
+10.0.0.0/24 dev eth0 proto kernel scope link src 10.0.0.100 
+10.8.0.0/24 dev wg0 proto kernel scope link src 10.8.0.100 
+192.168.10.0/24 dev wg0 scope link 
+### M4 Full Tunnel
+0:	from all lookup local
+32764:	from all lookup main suppress_prefixlength 0
+32765:	not from all fwmark 0xca6c lookup 51820
+32766:	from all lookup main
+32767:	from all lookup default
+default dev wg0 scope link 
+8.8.8.8 dev wg0 table 51820 src 10.8.0.100 uid 0 
+    cache 
+10.0.0.0/24 dev eth0 proto kernel scope link src 10.0.0.100 
+10.8.0.0/24 dev wg0 proto kernel scope link src 10.8.0.100 
+2 packets transmitted, 2 received, 0% packet loss, time 1002ms

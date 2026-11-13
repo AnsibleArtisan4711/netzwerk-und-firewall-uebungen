@@ -1,0 +1,43 @@
+# Testumgebung: Namespaces; lo statt dummy0; die Befehle des Skripts lab-lan-a.sh wurden von aussen mit ip -n ausgefuehrt
+### M11.1 lan-a (Befehle des Skripts, von aussen mit ip -n va ausgefuehrt; kein dummy0 im Test, daher lo)
+2 packets transmitted, 2 received, 0% packet loss, time 1028ms
+### M11.2-4 nft
+nft -c: Syntax ok
+table inet filter {
+	chain input {
+		type filter hook input priority filter; policy drop;
+		iif "lo" accept
+		ct state established,related accept
+		ct state invalid drop
+		icmp type echo-request accept
+		tcp dport 22 accept
+		udp dport { 1194, 51820 } accept
+	}
+
+	chain forward {
+		type filter hook forward priority filter; policy drop;
+		ct state established,related accept
+		iifname { "wg0", "tun0" } oifname "veth-gw" accept
+	}
+}
+table ip nat {
+	chain postrouting {
+		type nat hook postrouting priority srcnat; policy accept;
+		ip saddr { 10.8.0.0/24, 10.9.0.0/24 } oifname "veth-gw" masquerade
+	}
+}
+### M11.5 WireGuard unter Schutz
+2 packets transmitted, 2 received, 0% packet loss, time 1001ms
+2 packets transmitted, 2 received, 0% packet loss, time 1032ms
+IP 192.168.10.1 > 192.168.10.10: ICMP echo request, id 1553, seq 1, length 64
+IP 192.168.10.10 > 192.168.10.1: ICMP echo reply, id 1553, seq 1, length 64
+IP 192.168.10.1 > 192.168.10.10: ICMP echo request, id 1553, seq 2, length 64
+IP 192.168.10.10 > 192.168.10.1: ICMP echo reply, id 1553, seq 2, length 64
+table ip nat {
+### M11.6 OpenVPN unter Schutz
+2 packets transmitted, 2 received, 0% packet loss, time 1030ms
+2 packets transmitted, 2 received, 0% packet loss, time 1020ms
+IP 192.168.10.1 > 192.168.10.10: ICMP echo request, id 1601, seq 1, length 64
+IP 192.168.10.10 > 192.168.10.1: ICMP echo reply, id 1601, seq 1, length 64
+IP 192.168.10.1 > 192.168.10.10: ICMP echo request, id 1601, seq 2, length 64
+IP 192.168.10.10 > 192.168.10.1: ICMP echo reply, id 1601, seq 2, length 64
