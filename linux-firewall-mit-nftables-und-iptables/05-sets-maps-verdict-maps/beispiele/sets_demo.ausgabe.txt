@@ -1,0 +1,51 @@
+
+## 1. Ausgangslage: Port 80 über die Verdict-Map, Port 8080 über jump verwaltung
+http 10.0.2.2:80: OK
+http 10.0.2.2:8080: OK
+
+## 2. Client zur Laufzeit sperren (Set mit Timeout), danach Test
+$ on srv nft add element inet filter gesperrt { 10.0.1.2 timeout 5m }
+$ on srv nft list set inet filter gesperrt
+table inet filter {
+	set gesperrt {
+		type ipv4_addr
+		timeout 1h
+		elements = { 10.0.1.2 timeout 5m expires 4m59s996ms }
+	}
+}
+http 10.0.2.2:80: BLOCKIERT/keine Antwort
+
+## 3. Sperre wieder entfernen
+$ on srv nft delete element inet filter gesperrt { 10.0.1.2 }
+http 10.0.2.2:80: OK
+
+## 4. Verkettung Adresse . Port: 8080 aus intern erlaubt, auch ohne Eintrag in freigaben
+$ on srv nft delete element inet filter freigaben { 10.0.1.2 . 8080 }
+http 10.0.2.2:8080: OK
+
+## 5. Intern-Set ändern: Client-Netz entfernen -> jump verwaltung verwirft
+$ on srv nft delete element inet filter intern { 10.0.1.0/24 }
+http 10.0.2.2:8080: BLOCKIERT/keine Antwort
+
+## 6. Set und Map im Überblick
+table inet filter {
+	set gesperrt {
+		type ipv4_addr
+		timeout 1h
+	}
+	set intern {
+		type ipv4_addr
+		flags interval
+		elements = { 192.168.0.0/16 }
+	}
+	set freigaben {
+		type ipv4_addr . inet_service
+		elements = { 10.0.1.2 . 22 }
+	}
+}
+table inet filter {
+	map dienste {
+		type inet_service : verdict
+		elements = { 23 : drop, 80 : accept, 8080 : jump verwaltung }
+	}
+}

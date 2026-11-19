@@ -1,0 +1,29 @@
+nginx: the configuration file nginx.conf syntax is ok
+nginx: configuration file nginx.conf test is successful
+
+## 1. Naiver Proxy (Port 80): Der Client schickt selbst ein X-Forwarded-For; es wird nur verlängert, die Fälschung bleibt vorn
+x-forwarded-for=6.6.6.6, 10.1.1.2
+
+## 2. Gehärteter Proxy (Port 81): die Kette wird mit der echten Adresse überschrieben
+x-forwarded-for=10.1.1.2
+
+## 3. Antwort-Header: Server-Version, Sicherheits-Header, Backend-Kennung
+- Port 80 (naiv):
+Server: nginx/1.24.0 (Ubuntu)
+X-Backend: b1
+- Port 81 (gehärtet):
+Server: nginx
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+Referrer-Policy: no-referrer
+Content-Security-Policy: default-src 'self'
+
+## 4. PROXY-Protokoll: HAProxy (Port 8000) gibt die Client-Adresse an nginx weiter; ohne send-proxy (Port 8001) scheitert die Verbindung
+Configuration file is valid
+- mit send-proxy:
+client=10.1.2.1
+x-real-ip=10.1.1.2
+- ohne send-proxy:
+HTTP 502
+broken header: "GET / HTTP/1.1" while reading PROXY protocol
+(client= zeigt die Adresse des Proxys, x-real-ip die echte Adresse des Clients)

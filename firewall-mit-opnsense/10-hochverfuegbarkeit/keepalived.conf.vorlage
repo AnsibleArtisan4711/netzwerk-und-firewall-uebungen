@@ -1,0 +1,18 @@
+# keepalived als Stand-in für CARP (VRRP-Verfahren; kein CARP, andere Protokolle!)
+vrrp_instance LAN {
+    state BACKUP
+    interface v-lan
+    virtual_router_id 11
+    priority @PRIO@
+    advert_int 1
+    virtual_ipaddress { 10.8.1.254/24 }
+}
+vrrp_instance DMZ {
+    state BACKUP
+    interface v-dmz
+    virtual_router_id 12
+    priority @PRIO@
+    advert_int 1
+    virtual_ipaddress { 10.8.2.254/24 }
+}
+vrrp_sync_group ZUSAMMEN { group { LAN DMZ } }

@@ -1,0 +1,45 @@
+#!/usr/sbin/nft -f
+# Musterlösung Abschlussprojekt: Router-Firewall für das Labor (LAN v-fw1, Server v-fw2).
+flush ruleset
+
+define LAN = "v-fw1"
+define SRV = "v-fw2"
+
+table inet fw {
+  set web_ports { type inet_service; elements = { 80, 8080 } }
+  set versuche  { type ipv4_addr; flags dynamic,timeout; size 1024; timeout 1m; }
+
+  chain input {
+    type filter hook input priority 0; policy drop;
+    iif "lo" accept
+    ct state invalid drop
+    ct state established,related accept
+    iifname $LAN icmp type echo-request accept          # Ping an die Firewall nur aus dem LAN
+    counter comment "input: Rest verworfen"
+  }
+
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+    ct state invalid drop
+    ct state established,related accept
+    iifname $LAN oifname $SRV jump lan_zu_srv
+    iifname $SRV oifname $LAN counter drop comment "Server -> LAN: nichts"
+    counter comment "forward: Rest verworfen"
+  }
+
+  chain lan_zu_srv {
+    # neue Verbindungen auf 8080 je Quelladresse begrenzen (nach DNAT gilt der Zielport 8080)
+    tcp dport 8080 ct state new add @versuche { ip saddr limit rate over 10/minute burst 5 packets } counter drop
+    tcp dport @web_ports accept
+    icmp type echo-request accept
+  }
+}
+
+table ip nat {
+  chain pre  { type nat hook prerouting  priority dstnat; policy accept;
+    iifname "v-fw1" tcp dport 8000 dnat to 10.0.2.2:8080
+  }
+  chain post { type nat hook postrouting priority srcnat; policy accept;
+    oifname "v-fw2" masquerade
+  }
+}

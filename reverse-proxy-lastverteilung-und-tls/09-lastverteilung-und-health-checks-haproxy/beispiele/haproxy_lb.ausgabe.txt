@@ -1,0 +1,48 @@
+Configuration file is valid
+
+## 1. Round Robin (20 Anfragen) und gewichtet 3:1 (20 Anfragen)
+10 b1
+10 b2
+- gewichtet:
+15 b1
+5 b2
+
+## 2. Sitzungsbindung per Cookie: ohne Cookie wechseln die Backends, mit Cookie-Datei bleibt der Client beim selben
+- ohne Cookie:
+5 b1
+5 b2
+- mit Cookie:
+10 b1
+- Set-Cookie vom Proxy:
+set-cookie: SRV=s2; path=/
+
+## 3. Aktive Prüfung: b2 meldet sich krank (/health liefert 503); nach 2 Fehlschlägen nimmt HAProxy ihn heraus
+Zustand (Server, Status, Prüfergebnis):
+   rr/b1  UP  L7OK
+   rr/b2  DOWN  L7STS
+- Verteilung jetzt:
+10 b1
+
+## 4. b2 gesund: nach 2 erfolgreichen Prüfungen wieder UP
+   rr/b1  UP  L7OK
+   rr/b2  UP  L7OK
+- Verteilung jetzt:
+5 b1
+5 b2
+
+## 5. Backup-Server: b2 trägt nur, wenn b1 ausfällt
+- beide gesund:
+10 b1
+- b1 krank:
+10 b2
+
+## 6. Laufzeit-Schnittstelle: Server sanft aus der Verteilung nehmen (drain), deaktivieren, Gewicht ändern
+$ echo "set server rr/b2 state drain" | socat stdio /var/run/haproxy.sock
+- drain: neue Anfragen gehen nicht mehr an b2:
+10 b1
+$ echo "set server rr/b2 state ready" | socat stdio /var/run/haproxy.sock
+$ echo "set server rr/b2 weight 1" | socat stdio /var/run/haproxy.sock
+$ echo "set server rr/b1 weight 3" | socat stdio /var/run/haproxy.sock
+- Gewicht b1 3 / b2 1:
+15 b1
+5 b2

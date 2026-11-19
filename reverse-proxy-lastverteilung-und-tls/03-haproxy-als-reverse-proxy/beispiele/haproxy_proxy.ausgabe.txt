@@ -1,0 +1,38 @@
+
+## 1. Fehlerhafte Konfiguration: haproxy -c nennt Zeile und Ursache
+$ haproxy -c -f haproxy_defekt.cfg
+[ALERT]    (PID) : config : [haproxy_defekt.cfg:6] : 'server b1_dienst/b1' : unknown keyword 'chek'; did you mean 'check' maybe ?
+[ALERT]    (PID) : config : Error(s) found in configuration file : haproxy_defekt.cfg
+[ALERT]    (PID) : config : Fatal errors found in configuration.
+
+## 2. Richtige Konfiguration prüfen (haproxy -c) und starten
+Configuration file is valid
+
+## 3. Weiterleitung nach Host: shop.lab.test -> b1, api.lab.test -> b2
+shop.lab.test -> b1
+api.lab.test  -> b2
+
+## 4. Weiterleitung nach Pfad (/api/ wird entfernt) und Header X-Forwarded-For
+backend=b2
+pfad=/info
+x-forwarded-for=10.1.1.2
+x-forwarded-proto=http
+
+## 5. TCP-Modus (Port 9000): der Proxy reicht Bytes durch und versteht kein HTTP, es gibt keine Header-Ergänzung
+backend=b1
+client=10.1.2.1
+x-forwarded-for=-
+x-forwarded-proto=-
+
+## 6. Laufzeit-Schnittstelle (Admin-Socket): Version und Zustand der Server
+Name: HAProxy
+Version: 2.8.30-0ubuntu0.24.04.2
+Nbthread: 2
+web          FRONTEND   OPEN
+b1_dienst    b1         no check
+b1_dienst    BACKEND    UP
+b2_dienst    b2         no check
+b2_dienst    BACKEND    UP
+roh          FRONTEND   OPEN
+b1_roh       b1         no check
+b1_roh       BACKEND    UP

@@ -1,0 +1,40 @@
+
+## 1. Paket durch die Firewall (Client -> Server): prerouting, forward, postrouting
+counter packets 2 bytes 168 comment "prerouting"
+counter packets 0 bytes 0 comment "input"
+counter packets 2 bytes 168 comment "forward"
+counter packets 0 bytes 0 comment "output"
+counter packets 2 bytes 168 comment "postrouting"
+
+## 2. Paket an die Firewall (Client -> 10.0.1.1): prerouting, input
+counter packets 1 bytes 84 comment "prerouting"
+counter packets 1 bytes 84 comment "input"
+counter packets 0 bytes 0 comment "forward"
+counter packets 1 bytes 84 comment "output"
+counter packets 1 bytes 84 comment "postrouting"
+
+## 3. Paket von der Firewall selbst (Firewall -> Server): output, postrouting
+counter packets 1 bytes 84 comment "prerouting"
+counter packets 1 bytes 84 comment "input"
+counter packets 0 bytes 0 comment "forward"
+counter packets 1 bytes 84 comment "output"
+counter packets 1 bytes 84 comment "postrouting"
+
+## 4. Hooks und Prioritäten der Kette
+table ip pfad {
+	chain h_pre {
+		type filter hook prerouting priority filter; policy accept;
+	}
+	chain h_in {
+		type filter hook input priority filter; policy accept;
+	}
+	chain h_forward {
+		type filter hook forward priority filter; policy accept;
+	}
+	chain h_out {
+		type filter hook output priority filter; policy accept;
+	}
+	chain h_post {
+		type filter hook postrouting priority filter; policy accept;
+	}
+}

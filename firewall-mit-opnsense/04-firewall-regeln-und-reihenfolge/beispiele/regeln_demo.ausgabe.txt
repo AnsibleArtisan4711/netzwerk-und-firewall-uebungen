@@ -1,0 +1,26 @@
+
+## 1. Standard: nichts erlaubt, am Ende blockt die Standardregel (weitergeleiteter Verkehr)
+http 10.8.2.2:80: keine Antwort
+ping 10.8.2.2: keine Antwort
+
+## 2. Falsche Reihenfolge: erst „alles aus dem LAN erlauben“, dann „SSH sperren“ – die Sperre kommt nie zum Zug
+http 10.8.2.2:22: server=srv client=10.8.1.2 pfad=/
+
+## 3. Richtige Reihenfolge: erst sperren, dann erlauben
+http 10.8.2.2:22: keine Antwort
+http 10.8.2.2:80: server=srv client=10.8.1.2 pfad=/
+
+## 4. Regeln pro Schnittstelle: Verkehr aus der DMZ ins LAN bleibt ohne Regel gesperrt (nur Antworten erlaubt)
+http 10.8.1.2:80: keine Antwort
+
+## 5. Block mit Protokollierung vs. Reject: Unterschied für den Client (Wartezeit bzw. sofortige Ablehnung)
+reject (RST):
+rc=7 real	0m0.007s 
+drop (still):
+rc=28 real	0m3.011s 
+
+## 6. Zähler je Regel (zeigen, welche Regel Pakete trifft)
+iifname "v-lan" tcp dport 22 counter packets 1 reject with tcp reset comment "1 SSH ablehnen"
+iifname "v-lan" tcp dport 8080 counter packets 3 drop comment "2 8080 still verwerfen"
+iifname "v-lan" counter packets 0 accept comment "3 LAN alles"
+counter packets 0 comment "ENDE: Standard-Block"

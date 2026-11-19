@@ -1,0 +1,24 @@
+Prüfung ok
+
+## Testkatalog
+OK    LAN -> Server Port 80                                   erwartet=ja
+OK    LAN -> Server Port 22 (nicht erlaubt)                   erwartet=nein
+OK    Server -> LAN Ping                                      erwartet=nein
+OK    Ping LAN -> Firewall                                    erwartet=ja
+OK    Ping Server -> Firewall                                 erwartet=nein
+OK    Weiterleitung 10.0.1.1:8000 -> Server:8080              erwartet=ja
+Quelle laut Server: Quelle: 10.0.2.1  (Masquerade erwartet 10.0.2.1)
+
+## Begrenzung: 8080 direkt, bereits 2 Verbindungen verbraucht (80 zählt nicht, 8000 und die Abfrage oben)
+Versuch 1: OK
+Versuch 2: OK
+Versuch 3: OK
+Versuch 4: BLOCKIERT
+Versuch 5: BLOCKIERT
+Versuch 6: BLOCKIERT
+
+## Zähler
+		tcp dport 8080 ct state new add @versuche { ip saddr limit rate over 10/minute burst 5 packets } counter packets 6 bytes 360 drop
+		iifname "v-fw2" oifname "v-fw1" counter packets 1 bytes 84 drop comment "Server -> LAN: nichts"
+		counter packets 2 bytes 120 comment "forward: Rest verworfen"
+Ergebnis: 6 bestanden, 0 fehlgeschlagen

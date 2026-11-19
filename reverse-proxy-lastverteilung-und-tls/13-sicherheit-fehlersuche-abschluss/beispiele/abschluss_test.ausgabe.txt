@@ -1,0 +1,20 @@
+nginx: the configuration file nginx.conf syntax is ok
+nginx: configuration file nginx.conf test is successful
+
+## Testkatalog
+OK     HTTP wird mit 301 auf HTTPS umgeleitet                     301
+OK     HTTPS mit Lab-CA gelingt                                   200
+OK     HTTPS ohne Lab-CA wird abgelehnt (curl 60)                 60
+OK     HSTS-Header vorhanden                                      1
+OK     Server-Header ohne Version                                 server: nginx
+OK     Backend-Kennung ist verborgen                              0
+OK     Gefälschtes X-Forwarded-For wird überschrieben           x-forwarded-for=10.1.1.2
+OK     Backend erfährt X-Forwarded-Proto=https                   x-forwarded-proto=https
+OK     TLS 1.2 wird akzeptiert                                    TLSv1.2
+OK     Unbekannter Host-Name: keine Antwort (curl 52 oder 0)      000
+OK     Lastverteilung: 12 Anfragen verteilen sich auf beide Backends 6 b1 6 b2
+- Ausfall von b2: alle Anfragen gelingen weiter
+OK     12 Anfragen nach Ausfall von b2: alle von b1               12 b1
+- Begrenzung: 30 schnelle Anfragen (5 pro Sekunde, Burst 10)
+OK     mindestens 10 Anfragen mit 429 abgewiesen                  ja
+Ergebnis: 13 bestanden, 0 fehlgeschlagen

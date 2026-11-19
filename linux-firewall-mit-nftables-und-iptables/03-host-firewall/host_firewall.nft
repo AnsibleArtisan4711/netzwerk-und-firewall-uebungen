@@ -1,0 +1,19 @@
+#!/usr/sbin/nft -f
+# Basis-Regelwerk für einen Server (Host-Firewall): alles verwerfen, was nicht erlaubt ist.
+flush ruleset
+
+table inet filter {
+  chain input {
+    type filter hook input priority 0; policy drop;
+
+    iif "lo" accept                                  # Loopback
+    ct state invalid drop                            # kaputte Pakete
+    ct state established,related accept              # Antworten auf erlaubte Verbindungen
+    ip protocol icmp icmp type { echo-request } limit rate 5/second accept
+    tcp dport 80 accept                              # Webserver
+    tcp dport 8080 ip saddr 10.0.1.0/24 accept       # Verwaltung nur aus dem Client-Netz
+    counter comment "alles andere wird verworfen"
+  }
+  chain forward { type filter hook forward priority 0; policy drop; }
+  chain output  { type filter hook output  priority 0; policy accept; }
+}

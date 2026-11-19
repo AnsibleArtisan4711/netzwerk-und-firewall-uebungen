@@ -1,0 +1,36 @@
+#!/usr/sbin/nft -f
+# Routing-Firewall mit zwei Zonen: LAN (v-fw1) und SERVER (v-fw2); Standard: alles verwerfen.
+flush ruleset
+
+define LAN = "v-fw1"
+define SRV = "v-fw2"
+
+table inet fw {
+  set web_ports { type inet_service; elements = { 80, 8080 } }
+
+  chain input {
+    type filter hook input priority 0; policy drop;
+    iif "lo" accept
+    ct state established,related accept
+    iifname $LAN ip protocol icmp accept            # Ping an die Firewall aus dem LAN
+  }
+
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+    ct state invalid drop
+    ct state established,related accept
+    iifname $LAN oifname $SRV jump lan_zu_srv
+    iifname $SRV oifname $LAN jump srv_zu_lan
+    counter comment "Rest verworfen"
+  }
+
+  chain lan_zu_srv {
+    tcp dport @web_ports counter accept
+    icmp type echo-request counter accept
+  }
+
+  chain srv_zu_lan {
+    # Server dürfen von sich aus nichts ins LAN
+    counter drop
+  }
+}

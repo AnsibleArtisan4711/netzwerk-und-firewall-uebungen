@@ -1,0 +1,41 @@
+
+## 1. Interne CA (Schlüssel, selbstsigniertes Zertifikat, 30 Tage)
+subject=O = Lab, CN = Lab Firewall CA
+issuer=O = Lab, CN = Lab Firewall CA
+X509v3 Basic Constraints: critical
+    CA:TRUE
+
+## 2. Serverzertifikat für die Weboberfläche der Firewall (SAN mit Name und Adresse)
+subject=O = Lab, CN = fw.lab.test
+issuer=O = Lab, CN = Lab Firewall CA
+X509v3 Subject Alternative Name: 
+    DNS:fw.lab.test, IP Address:10.8.1.1
+X509v3 Extended Key Usage: 
+    TLS Web Server Authentication
+
+## 3. Prüfen: Kette, Name, Adresse, Restlaufzeit
+fw.crt: OK
+Hostname fw.lab.test does match certificate
+IP 10.8.1.1 does match certificate
+Hostname falsch.lab.test does NOT match certificate
+Certificate will not expire
+Certificate will expire
+
+## 4. Clientzertifikat (für Anmeldung per Zertifikat, z. B. VPN) mit clientAuth
+subject=O = Lab, CN = bob
+X509v3 Extended Key Usage: 
+    TLS Web Client Authentication
+
+## 5. Sperrliste (CRL): Zertifikat von bob widerrufen und prüfen
+Revoking Certificate <Seriennummer>.
+CRL ausgestellt von: issuer=O = Lab, CN = Lab Firewall CA
+Serial Number: (Nummer von bob.crt)
+fw.crt: OK
+error 23 at 0 depth lookup: certificate revoked
+
+## 6. TLS-Verbindung mit CA prüfen (s_server/s_client, Rückgabecode)
+Verify return code: 0 (ok)
+Verify return code: 62 (hostname mismatch)
+Verify return code: 21 (unable to verify the first certificate)
+    Verify return code: 21 (unable to verify the first certificate)
+    Verify return code: 21 (unable to verify the first certificate)

@@ -1,0 +1,98 @@
+
+## TEIL A: ufw auf dem Server
+$ on srv ufw default deny incoming
+Default incoming policy changed to 'deny'
+(be sure to update your rules accordingly)
+$ on srv ufw allow 80/tcp
+Rules updated
+$ on srv ufw allow from 10.0.1.0/24 to any port 8080 proto tcp
+Rules updated
+$ on srv ufw limit 22/tcp
+Rules updated
+$ on srv ufw --force enable
+Firewall is active and enabled on system startup
+$ on srv ufw status numbered
+Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 80/tcp                     ALLOW IN    Anywhere                  
+[ 2] 8080/tcp                   ALLOW IN    10.0.1.0/24               
+[ 3] 22/tcp                     LIMIT IN    Anywhere                  
+
+http 10.0.2.2:80: OK
+http 10.0.2.2:8080: OK
+
+## A2. Was ufw darunter anlegt (Auszug aus iptables -S, nur Regeln mit Port 80 und 8080)
+-A ufw-user-input -p tcp -m tcp --dport 80 -j ACCEPT
+-A ufw-user-input -s 10.0.1.0/24 -p tcp -m tcp --dport 8080 -j ACCEPT
+
+## TEIL B: firewalld auf der Firewall (Zonen: internal = LAN, external = Server-Seite)
+$ fwc --state
+running
+$ fwc --get-zones
+block dmz drop external home internal public trusted work
+$ fwc --permanent --zone=internal --change-interface=v-fw1
+success
+$ fwc --permanent --zone=external --change-interface=v-fw2
+success
+
+## B2. Richtlinie internal -> external: nur Port 80 (rich rule); Policies lassen sich nur dauerhaft anlegen
+$ fwc --permanent --new-policy lan_zu_srv
+success
+$ fwc --permanent --policy lan_zu_srv --add-ingress-zone internal
+success
+$ fwc --permanent --policy lan_zu_srv --add-egress-zone external
+success
+$ fwc --permanent --policy lan_zu_srv --set-target REJECT
+success
+$ fwc --permanent --policy lan_zu_srv --add-rich-rule rule family="ipv4" port port="80" protocol="tcp" accept
+success
+
+## B3. Vorher/nachher: Ohne reload ist die dauerhafte Konfiguration noch nicht aktiv
+http 10.0.2.2:80: BLOCKIERT/keine Antwort
+$ fwc --reload
+success
+$ fwc --get-active-zones
+external
+  interfaces: v-fw2
+internal
+  interfaces: v-fw1
+public (default)
+http 10.0.2.2:80: OK
+http 10.0.2.2:8080: BLOCKIERT/keine Antwort
+$ fwc --zone=external --query-masquerade
+yes
+
+## B4. Dienst auf der Firewall selbst freigeben (SSH ist in internal schon erlaubt) und Laufzeit gegen Dauerhaft
+$ fwc --zone=internal --add-service=http
+success
+$ fwc --zone=internal --list-all
+internal (active)
+  target: default
+  ingress-priority: 0
+  egress-priority: 0
+  icmp-block-inversion: no
+  interfaces: v-fw1
+  sources: 
+  services: dhcpv6-client http mdns samba-client ssh
+  ports: 
+  protocols: 
+  forward: yes
+  masquerade: no
+  forward-ports: 
+  source-ports: 
+  icmp-blocks: 
+  rich rules: 
+$ fwc --zone=internal --add-port=3128/tcp --permanent
+success
+$ fwc --zone=internal --query-port=3128/tcp
+no
+$ fwc --reload
+success
+$ fwc --zone=internal --query-port=3128/tcp
+yes
+
+## B5. Was firewalld daraus in nftables macht (nur Tabellen und Ketten-Anzahl)
+table inet firewalld
+Ketten: 171   Zeilen im Regelwerk: 780

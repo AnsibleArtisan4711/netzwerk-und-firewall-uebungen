@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!-- Frei erfundene Beispieldatei zum Üben. Das ist NICHT die echte Struktur einer OPNsense-Konfiguration. -->
+<firewall-beispiel>
+  <system>
+    <hostname>fw01</hostname>
+    <domain>lab.test</domain>
+    <user><name>admin</name><password>$2y$10$GEHEIMERHASHWERT</password></user>
+  </system>
+  <interfaces>
+    <lan><if>v-lan</if><ipaddr>10.8.1.1</ipaddr><subnet>24</subnet></lan>
+    <dmz><if>v-dmz</if><ipaddr>10.8.2.1</ipaddr><subnet>24</subnet></dmz>
+  </interfaces>
+  <rules>
+    <rule><nr>1</nr><action>pass</action><from>lan</from><to>dmz</to><port>80</port></rule>
+  </rules>
+  <vpn><wireguard><privatekey>GEHEIMER-SCHLUESSEL</privatekey></wireguard></vpn>
+</firewall-beispiel>

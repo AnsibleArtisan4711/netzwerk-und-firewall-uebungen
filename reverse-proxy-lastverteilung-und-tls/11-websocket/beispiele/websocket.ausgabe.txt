@@ -1,0 +1,26 @@
+nginx: the configuration file nginx.conf syntax is ok
+nginx: configuration file nginx.conf test is successful
+
+## 1. nginx ohne Upgrade-Header: das Backend sieht keinen Upgrade (426)
+Handshake: HTTP/1.1 426 Upgrade Required
+
+## 2. nginx mit Upgrade-Headern, Leerlaufzeit 3 s: Verbindung steht, nach 5 s Pause kappt der Proxy sie
+Handshake: HTTP/1.1 101 Switching Protocols
+Antwort 1: b1: hallo
+Antwort 2: Verbindung vom Proxy beendet (EOFError)
+
+## 3. nginx mit Leerlaufzeit 60 s: dieselbe Pause von 5 s ist unkritisch
+Handshake: HTTP/1.1 101 Switching Protocols
+Antwort 1: b1: hallo
+Antwort 2: b1: nach der Pause
+
+## 4. HAProxy (kein Zusatz außer timeout tunnel nötig): Leerlaufzeit 3 s kappt, 60 s hält
+Configuration file is valid
+- timeout tunnel 3s:
+Handshake: HTTP/1.1 101 Switching Protocols
+Antwort 1: b1: hallo
+Antwort 2: Verbindung vom Proxy beendet (EOFError)
+- timeout tunnel 60s:
+Handshake: HTTP/1.1 101 Switching Protocols
+Antwort 1: b1: hallo
+Antwort 2: b1: nach der Pause

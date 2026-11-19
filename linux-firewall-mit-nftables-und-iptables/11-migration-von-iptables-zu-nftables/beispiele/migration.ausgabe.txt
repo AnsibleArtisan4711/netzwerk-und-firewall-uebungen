@@ -1,0 +1,103 @@
+
+## 1. Altbestand mit iptables-restore laden und testen
+$ on fw iptables-restore alt.rules
+*filter
+:INPUT ACCEPT [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+-A INPUT -i v-fw1 -p icmp -m icmp --icmp-type 8 -m limit --limit 5/sec -j ACCEPT
+-A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A FORWARD -i v-fw1 -o v-fw2 -p tcp -m multiport --dports 80,8080 -m conntrack --ctstate NEW -j ACCEPT
+-A FORWARD -i v-fw1 -o v-fw2 -p icmp -j ACCEPT
+-A FORWARD -m limit --limit 3/min -j LOG --log-prefix "alt-drop: "
+COMMIT
+*nat
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+-A PREROUTING -i v-fw1 -p tcp -m tcp --dport 8000 -j DNAT --to-destination 10.0.2.2:8080
+-A POSTROUTING -o v-fw2 -j MASQUERADE
+COMMIT
+http 10.0.2.2:80: OK
+http 10.0.2.2:8080: OK
+http 10.0.1.1:8000: OK
+http 10.0.2.2:22: BLOCKIERT/keine Antwort
+ping 10.0.2.2: OK
+ping 10.0.1.2: keine Antwort
+
+## 2. Sichern und mit iptables-restore-translate übersetzen
+$ iptables-restore-translate -f gesichert.rules > neu.nft
+add table ip filter
+add chain ip filter INPUT { type filter hook input priority 0; policy accept; }
+add chain ip filter FORWARD { type filter hook forward priority 0; policy drop; }
+add chain ip filter OUTPUT { type filter hook output priority 0; policy accept; }
+add rule ip filter INPUT iifname "v-fw1" icmp type echo-request limit rate 5/second burst 5 packets counter accept
+add rule ip filter FORWARD ct state related,established counter accept
+add rule ip filter FORWARD iifname "v-fw1" oifname "v-fw2" ip protocol tcp tcp dport { 80, 8080 } ct state new counter accept
+add rule ip filter FORWARD iifname "v-fw1" oifname "v-fw2" ip protocol icmp counter accept
+add rule ip filter FORWARD limit rate 3/minute burst 5 packets counter log prefix "alt-drop: "
+add table ip nat
+add chain ip nat PREROUTING { type nat hook prerouting priority -100; policy accept; }
+add chain ip nat INPUT { type nat hook input priority 100; policy accept; }
+add chain ip nat OUTPUT { type nat hook output priority -100; policy accept; }
+add chain ip nat POSTROUTING { type nat hook postrouting priority 100; policy accept; }
+add rule ip nat PREROUTING iifname "v-fw1" tcp dport 8000 counter dnat to 10.0.2.2:8080
+add rule ip nat POSTROUTING oifname "v-fw2" counter masquerade
+
+## 3. Einzelne Regeln übersetzen (iptables-translate)
+$ iptables-translate -A INPUT -p tcp --dport 22 -m conntrack --ctstate NEW -m recent --set --name ssh
+nft # -A INPUT -p tcp --dport 22 -m conntrack --ctstate NEW -m recent --set --name ssh 
+$ iptables-translate -A FORWARD -s 10.0.0.0/8 ! -d 10.0.2.0/24 -j DROP
+nft 'add rule ip filter FORWARD ip saddr 10.0.0.0/8 ip daddr != 10.0.2.0/24 counter drop'
+$ ip6tables-translate -A INPUT -p ipv6-icmp -j ACCEPT
+nft 'add rule ip6 filter INPUT meta l4proto ipv6-icmp counter accept'
+
+## 4. Alles Alte entfernen, übersetzte Datei laden, erneut testen
+$ on fw nft -f neu.nft
+table ip filter {
+	chain INPUT {
+		type filter hook input priority filter; policy accept;
+		iifname "v-fw1" icmp type echo-request limit rate 5/second burst 5 packets counter packets 0 bytes 0 accept
+	}
+
+	chain FORWARD {
+		type filter hook forward priority filter; policy drop;
+		ct state established,related counter packets 0 bytes 0 accept
+		iifname "v-fw1" oifname "v-fw2" tcp dport { 80, 8080 } ct state new counter packets 0 bytes 0 accept
+		iifname "v-fw1" oifname "v-fw2" ip protocol icmp counter packets 0 bytes 0 accept
+		limit rate 3/minute burst 5 packets counter packets 0 bytes 0 log prefix "alt-drop: "
+	}
+
+	chain OUTPUT {
+		type filter hook output priority filter; policy accept;
+	}
+}
+table ip nat {
+	chain PREROUTING {
+		type nat hook prerouting priority dstnat; policy accept;
+		iifname "v-fw1" tcp dport 8000 counter packets 0 bytes 0 dnat to 10.0.2.2:8080
+	}
+
+	chain INPUT {
+		type nat hook input priority srcnat; policy accept;
+	}
+
+	chain OUTPUT {
+		type nat hook output priority dstnat; policy accept;
+	}
+
+	chain POSTROUTING {
+		type nat hook postrouting priority srcnat; policy accept;
+		oifname "v-fw2" counter packets 0 bytes 0 masquerade
+	}
+}
+http 10.0.2.2:80: OK
+http 10.0.2.2:8080: OK
+http 10.0.1.1:8000: OK
+http 10.0.2.2:22: BLOCKIERT/keine Antwort
+ping 10.0.2.2: OK
+ping 10.0.1.2: keine Antwort
+
+## 5. Vergleich
+Verhalten identisch (6 Prüfungen)

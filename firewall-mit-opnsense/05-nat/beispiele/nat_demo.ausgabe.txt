@@ -1,0 +1,40 @@
+
+## 1. Ohne NAT: LAN-Client erreicht das „Internet“ nicht (keine Rückroute im WAN-Netz)
+http 10.8.9.1:80: keine Antwort
+
+## 2. Ausgehendes NAT: Quelladresse wird die WAN-Adresse der Firewall
+http 10.8.9.1:80: server=wan client=10.8.9.2 pfad=/
+Verbindungstabelle der Firewall:
+src=10.8.1.2 dst=10.8.9.1 sport=P dport=80 src=10.8.9.1 dst=10.8.9.2 sport=P dport=60028 [ASSURED] mark=0 use=1
+
+## 3. Portweiterleitung: WAN-Seite Port 8080 → Server in der DMZ Port 80
+$ on wan curl -s -m 2 http://10.8.9.2:8080/
+server=srv client=10.8.9.1 pfad=/
+
+## 4. Ohne passende Filterregel wäre die Weiterleitung wirkungslos (ct status dnat entfernen)
+$ on wan curl -s -m 2 http://10.8.9.2:8080/
+
+## 5. Wieder erlauben, aber nur genau diese Weiterleitung
+$ on wan curl -s -m 2 http://10.8.9.2:8080/
+server=srv client=10.8.9.1 pfad=/
+
+## 6. 1:1-NAT: externe Adresse 10.8.9.50 ↔ interner Server 10.8.2.2 (beide Richtungen)
+$ on wan curl -s -m 2 http://10.8.9.50:80/
+server=srv client=10.8.9.1 pfad=/
+$ on srv curl -s -m 2 http://10.8.9.1:80/
+server=wan client=10.8.9.50 pfad=/
+
+## 7. Aktuelle NAT-Regeln
+table ip nat {
+chain post {
+type nat hook postrouting priority srcnat; policy accept;
+ip saddr 10.8.2.2 oifname "v-wan" snat to 10.8.9.50
+oifname "v-wan" masquerade
+}
+
+chain pre {
+type nat hook prerouting priority dstnat; policy accept;
+iifname "v-wan" tcp dport 8080 dnat to 10.8.2.2:80
+ip daddr 10.8.9.50 dnat to 10.8.2.2
+}
+}

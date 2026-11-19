@@ -1,0 +1,5 @@
+# Eigene Testregeln (Suricata-Regelsyntax). SIDs ab 1000000 sind für lokale Regeln üblich.
+alert http any any -> any any (msg:"LAB Zugriff auf /geheim"; flow:established,to_server; http.uri; content:"/geheim"; startswith; classtype:policy-violation; sid:1000001; rev:1;)
+alert http any any -> any any (msg:"LAB Verdächtiger User-Agent sqlmap"; flow:established,to_server; http.user_agent; content:"sqlmap"; nocase; classtype:web-application-attack; sid:1000002; rev:1;)
+drop http any any -> any any (msg:"LAB Pfad ../ (Directory Traversal)"; flow:established,to_server; http.uri.raw; content:"../"; classtype:web-application-attack; sid:1000003; rev:1;)
+alert tcp any any -> $HOME_NET 22 (msg:"LAB SSH-Verbindungsversuch"; flow:to_server; flags:S,12; classtype:attempted-recon; sid:1000004; rev:1;)

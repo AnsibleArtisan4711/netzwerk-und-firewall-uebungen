@@ -1,0 +1,34 @@
+nginx: the configuration file nginx.conf syntax is ok
+nginx: configuration file nginx.conf test is successful
+
+## 1. Tabelle der Fälle: Aufruf, HTTP-Status, Bedeutung
+/ok                                          200     alles in Ordnung
+/abgelehnt (Port ohne Dienst)                502     Bad Gateway: Verbindung wurde abgewiesen
+/tot (Adresse ohne Host)                     504     Gateway Time-out: Verbindungsaufbau ohne Antwort
+/langsam (read timeout 2 s, Backend 3 s)     504     Gateway Time-out: Antwort zu spät
+/upload mit 5000 Bytes (Grenze 1k)           413     Request Entity Too Large
+unbekannter Host-Name                        000     000 = Verbindung ohne Antwort beendet (nginx 444)
+
+## 2. Begrenzung: 10 schnelle Anfragen auf /limit (2 pro Sekunde, Burst 2): 3 gehen durch, der Rest bekommt 429
+200 200 200 429 429 429 429 429 429 429 
+
+## 3. Was das Fehlerprotokoll dazu sagt (gekürzt, ohne Zeit und Prozessnummern)
+1 [error] client intended to send too large body: 5000 bytes
+1 [error] connect() failed (111) while connecting to upstream, upstream: "http://10.1.2.12:9999/"
+7 [error] limiting requests, excess: N by zone "z"
+1 [error] upstream timed out (110) while connecting to upstream, upstream: "http://10.1.2.99:8080/"
+1 [error] upstream timed out (110) while reading response header from upstream, upstream: "http://10.1.2.11:8080/slow?s=3"
+
+## 4. Server-Header ist ohne Version (server_tokens off); der Zugriff auf /ok im Zugriffsprotokoll
+Server: nginx
+10.1.1.2 - - [Zeit] "GET /ok HTTP/1.1" 200 102 "-" "curl/8.5.0"
+
+## 5. HAProxy: sind alle Server als DOWN markiert, liefert der Proxy selbst 503 (nicht das Backend)
+Configuration file is valid
+- beide gesund: HTTP 200
+- beide krank:  HTTP 503
+   <html><body><h1>503 Service Unavailable</h1>
+   No server is available to handle this request.
+   </body></html>
+alle         b1         DOWN
+alle         b2         DOWN

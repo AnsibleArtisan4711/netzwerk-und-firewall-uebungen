@@ -1,0 +1,41 @@
+
+## Fehler 1: „SSH ist erreichbar, obwohl ich es gesperrt habe“
+http 10.8.2.2:22: server=srv client=10.8.1.2 pfad=/
+Diagnose: Zähler je Regel (die Sperre steht unten und bleibt bei 0)
+Zähler 1: iifname "v-lan" accept comment "ALLES-AUS-LAN"
+Zähler 0: iifname "v-lan" tcp dport 22 drop comment "SSH-SPERRE"
+Korrektur: Sperre vor die allgemeine Erlaubnis stellen
+http 10.8.2.2:22: keine Antwort
+
+## Fehler 2: „Von innen ist das Internet nicht erreichbar“ (NAT fehlt)
+http 10.8.9.1:80: keine Antwort
+Diagnose: Mitschnitt auf der WAN-Seite – die Anfrage verlässt die Firewall mit der internen Quelladresse (10.8.1.2); das Internet kennt keine Rückroute
+IP 10.8.1.2.PORT > 10.8.9.1.80: Flags [S], win 64240, 
+Korrektur: Masquerade am WAN-Interface
+http 10.8.9.1:80: server=wan client=10.8.9.2 pfad=/
+
+## Fehler 3: „Die Portweiterleitung funktioniert nicht“ (DNAT ohne Filterregel)
+$ on wan curl -s -m 2 http://10.8.9.2:8080/
+Diagnose: Die NAT-Regel zählt (Pakete kommen an), die Standardregel am Ende der Filterkette zählt ebenfalls (sie werden verworfen)
+NAT-Regel: counter packets 2
+counter packets 2 comment "ENDE"
+Korrektur: Filterregel für die weitergeleiteten Verbindungen
+$ on wan curl -s -m 2 http://10.8.9.2:8080/
+server=srv client=10.8.9.1 pfad=/
+
+## Fehler 4: „Nur manche Clients erreichen den Server nicht“ (Server hat falsches Gateway)
+http 10.8.2.2:80: keine Antwort
+Diagnose: Mitschnitt auf der DMZ-Seite – die Anfrage kommt an, der Server fragt per ARP nach seinem Gateway 10.8.2.9 und bekommt keine Antwort
+ARP, Request who-has 10.8.2.9 tell 10.8.2.2, length 28
+IP 10.8.1.2.PORT > 10.8.2.2.80: Flags [S], win 64240, 
+Gegenprobe: Der Server ist im eigenen Netz erreichbar (nur der Rückweg in fremde Netze fehlt):
+ping 10.8.2.2: OK
+Korrektur: Gateway des Servers auf 10.8.2.1
+http 10.8.2.2:80: server=srv client=10.8.1.2 pfad=/
+
+## Fehler 5: „Neuer Server wird nicht erreicht“ (Tippfehler im Alias)
+http 10.8.2.2:80: keine Antwort
+Diagnose: Inhalt des Alias prüfen
+		elements = { 10.8.2.22 }
+Korrektur: Eintrag richtigstellen
+http 10.8.2.2:80: server=srv client=10.8.1.2 pfad=/

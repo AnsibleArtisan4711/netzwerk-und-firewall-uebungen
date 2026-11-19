@@ -1,0 +1,28 @@
+
+## 1. Das Backend ist vom Client aus nicht erreichbar (nur der Proxy ist an beide Netze angeschlossen, Routing ist aus)
+$ on cl curl -s -m 2 -o /dev/null -w HTTP %{http_code}\n http://10.1.2.11:8080/
+HTTP 000
+
+## 2. nginx als minimaler Reverse Proxy starten (nginx -t prüft die Konfiguration)
+nginx: the configuration file nginx.conf syntax is ok
+nginx: configuration file nginx.conf test is successful
+
+## 3. Der Client spricht nur mit dem Proxy; das Backend meldet, wer bei ihm angefragt hat
+$ on cl curl -s -m 3 http://10.1.1.1/
+backend=b1
+zaehler=1
+pfad=/
+client=10.1.2.1
+host=10.1.2.11:8080
+x-forwarded-for=-
+x-forwarded-proto=-
+x-real-ip=-
+
+## 4. Während einer langsamen Anfrage: zwei getrennte TCP-Verbindungen (Client zum Proxy, Proxy zum Backend)
+$ on px ss -tn state established
+Recv-Q Send-Q Local Address:Port  Peer Address:Port Process
+0      0           10.1.1.1:80        10.1.1.2:57626       
+0      0           10.1.2.1:40682    10.1.2.11:8080        
+
+## 5. Der Proxy selbst: Zugriffsprotokoll und Fehlerprotokoll (letzte Zeilen)
+10.1.1.2 - - [Zeit] "GET / HTTP/1.1" 200 114 "-" "curl/8.5.0"

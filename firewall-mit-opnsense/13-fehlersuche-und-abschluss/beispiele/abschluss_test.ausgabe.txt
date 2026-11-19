@@ -1,0 +1,20 @@
+
+## Regelwerk prüfen und laden: abschluss_loesung.nft
+Syntax: OK (nft -c)
+Geladen
+
+## Tests
+[OK]   LAN → DMZ Port 80 erreichbar
+[OK]   LAN → DMZ Port 8080 erreichbar
+[OK]   LAN → DMZ Port 22 gesperrt
+[OK]   LAN → Internet Port 80 erreichbar
+[OK]   Internet sieht die WAN-Adresse der Firewall (NAT)
+[OK]   DMZ → LAN gesperrt
+[OK]   DMZ → Internet gesperrt
+[OK]   Internet → Firewall Port 8080 landet im DMZ-Server (Portweiterleitung)
+[OK]   Internet → Firewall Port 80 gesperrt (keine Weiterleitung)
+[OK]   Internet → Firewall Ping gesperrt
+[OK]   LAN → Firewall Ping erlaubt
+[OK]   Gesperrter SSH-Versuch wird gezählt
+
+Ergebnis: 12 bestanden, 0 fehlgeschlagen

@@ -1,0 +1,23 @@
+
+## 1. Vorab: Können Linux-VLAN-Schnittstellen angelegt werden? (im Labor nicht)
+$ on fw ip link add link v-lan name v-lan.10 type vlan id 10
+Error: Unknown device type.
+
+## 2. Zonen als getrennte Schnittstellen: LAN, DMZ und WAN der Firewall (jede ein eigenes Netz)
+$ on fw ip -br addr show
+lo               UNKNOWN        127.0.0.1/8 
+v-lan@if430      UP             10.8.1.1/24 
+v-dmz@if432      UP             10.8.2.1/24 
+v-wan@if434      UP             10.8.9.2/24 
+
+## 3. Ohne Regel zwischen den Zonen wird nicht geroutet, wenn Weiterleitung aus ist
+http 10.8.2.2:80: keine Antwort
+http 10.8.2.2:80: server=srv client=10.8.1.2 pfad=/
+
+## 4. Ein getaggter Rahmen (VLAN 10) auf dem Kabel: tcpdump -e zeigt Tag und Typ
+gesendet: 46 Bytes mit VLAN-ID 10
+02:00:00:00:00:01 > ff:ff:ff:ff:ff:ff, ethertype 802.1Q (0x8100), length 46: vlan 10, p 0, ethertype ARP (0x0806), Request who-has 10.8.10.1 tell 10.8.10.2, length 28
+
+## 5. Ein Tag mit anderer ID ist ein anderes Netz (VLAN 20): der Empfänger trennt nach ID
+gesendet: 46 Bytes mit VLAN-ID 20
+02:00:00:00:00:01 > ff:ff:ff:ff:ff:ff, ethertype 802.1Q (0x8100), length 46: vlan 20, p 0, ethertype ARP (0x0806), Request who-has 10.8.10.1 tell 10.8.10.2, length 28

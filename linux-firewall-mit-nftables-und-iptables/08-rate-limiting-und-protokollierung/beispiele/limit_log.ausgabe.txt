@@ -1,0 +1,41 @@
+
+## 1. Ping-Flut: 40 Pakete mit 20 ms Abstand (50 Pakete pro Sekunde), Limit 10 pro Sekunde, Burst 5
+40 packets transmitted, 14 received, 65% packet loss, time 940ms
+rtt min/avg/max/mdev = 0.027/0.041/0.087/0.017 ms
+table inet filter {
+	counter ping_ueberschuss {
+		packets 26 bytes 2184
+	}
+}
+
+## 2. Neue Verbindungen auf 8080: 6 Versuche in Folge, erwartet werden 3 Treffer und 3 Abweisungen
+http 10.0.2.2:8080: OK
+http 10.0.2.2:8080: OK
+http 10.0.2.2:8080: OK
+http 10.0.2.2:8080: BLOCKIERT/keine Antwort
+http 10.0.2.2:8080: BLOCKIERT/keine Antwort
+http 10.0.2.2:8080: BLOCKIERT/keine Antwort
+
+## 3. Protokoll der Abweisungen (nflog Gruppe 1, gelesen mit tcpdump)
+IP (tos 0x0, ttl 63, id 45725, offset 0, flags [DF], proto TCP (6), length 60)
+    10.0.1.2.44292 > 10.0.2.2.8080: Flags [S], cksum 0x1732 (incorrect -> 0xf2c4), seq 486056577, win 64240, options [mss 1460,sackOK,TS val 2446206311 ecr 0,nop,wscale 10], length 0
+IP (tos 0x0, ttl 63, id 45726, offset 0, flags [DF], proto TCP (6), length 60)
+    10.0.1.2.44292 > 10.0.2.2.8080: Flags [S], cksum 0x1732 (incorrect -> 0xeec4), seq 486056577, win 64240, options [mss 1460,sackOK,TS val 2446207335 ecr 0,nop,wscale 10], length 0
+IP (tos 0x0, ttl 63, id 1788, offset 0, flags [DF], proto TCP (6), length 60)
+    10.0.1.2.44306 > 10.0.2.2.8080: Flags [S], cksum 0x1732 (incorrect -> 0x1cf9), seq 4153174819, win 64240, options [mss 1460,sackOK,TS val 1393530541 ecr 0,nop,wscale 10], length 0
+
+## 4. Web-Zugriffe werden mit Präfix protokolliert (nflog Gruppe 2)
+http 10.0.2.2:80: OK
+IP (tos 0x0, ttl 63, id 10329, offset 0, flags [DF], proto TCP (6), length 60)
+    10.0.1.2.53582 > 10.0.2.2.80: Flags [S], cksum 0x1732 (incorrect -> 0xae4e), seq 2969293269, win 64240, options [mss 1460,sackOK,TS val 2013707075 ecr 0,nop,wscale 10], length 0
+
+## 5. Dynamisches Set (Quelladressen, die das Limit überschritten haben)
+table inet filter {
+	set ssh_versuche {
+		type ipv4_addr
+		size 128
+		flags dynamic,timeout
+		timeout 1m
+		elements = { 10.0.1.2 limit rate over 3/minute burst 3 packets expires 42s384ms }
+	}
+}

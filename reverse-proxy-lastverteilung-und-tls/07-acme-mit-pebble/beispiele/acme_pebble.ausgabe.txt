@@ -1,0 +1,50 @@
+
+## 1. Pebble starten (ACME-Testserver auf dem Proxy: Verzeichnis unter https://localhost:14000/dir, Prüfung auf Port 80)
+keyChange
+meta
+newAccount
+newNonce
+newOrder
+
+## 2. Zertifikat für shop.lab.test mit der Methode standalone (certbot lauscht selbst auf Port 80)
+$ certbot certonly --standalone -d shop.lab.test --server https://localhost:14000/dir
+Requesting a certificate for shop.lab.test
+Successfully received certificate.
+Certificate is saved at: /tmp/p11-le/conf/live/shop.lab.test/fullchain.pem
+Key is saved at:         /tmp/p11-le/conf/live/shop.lab.test/privkey.pem
+This certificate expires on (Datum)
+
+## 3. Ergebnis: Dateien und Aussteller (der Aussteller ist die Testzertifizierungsstelle, nicht die Lab-CA)
+README cert.pem chain.pem fullchain.pem privkey.pem 
+   subject=
+   issuer=CN = Pebble Intermediate CA (Kennung)
+   X509v3 Subject Alternative Name: critical
+       DNS:shop.lab.test
+
+## 4. Zweites Zertifikat mit der Methode webroot (nginx liefert die Challenge-Datei aus), dann nginx mit HTTPS starten
+nginx: the configuration file nginx.conf syntax is ok
+nginx: configuration file nginx.conf test is successful
+$ certbot certonly --webroot -w /tmp/p11-webroot -d api.lab.test --server https://localhost:14000/dir
+Successfully received certificate.
+Certificate is saved at: /tmp/p11-le/conf/live/api.lab.test/fullchain.pem
+nginx: the configuration file nginx.conf syntax is ok
+nginx: configuration file nginx.conf test is successful
+
+## 5. Prüfen mit dem Wurzelzertifikat des Testservers (Abruf über die Verwaltungsschnittstelle von Pebble)
+   subject=CN = Pebble Root CA (Kennung)
+$ curl --cacert root.pem https://api.lab.test/
+backend=b2
+host=api.lab.test
+x-forwarded-proto=https
+
+## 6. Erneuern: certbot renew prüft die Laufzeit; mit --force-renewal wird sofort ein neues Zertifikat ausgestellt, der Hook lädt nginx neu
+$ certbot renew --no-random-sleep-on-renew --force-renewal --cert-name api.lab.test --deploy-hook "kill -HUP <nginx>"
+Congratulations, all renewals succeeded: 
+Seriennummer geändert: neues Zertifikat ausgestellt
+nginx liefert das neue Zertifikat (Hook hat neu geladen)
+
+## 7. Laufzeit und Erneuerungskonfiguration
+   notBefore=Nov 19 19:28:21 2026 GMT
+   notAfter=Feb 17 19:28:20 2027 GMT
+   server = https://localhost:14000/dir
+   authenticator = webroot

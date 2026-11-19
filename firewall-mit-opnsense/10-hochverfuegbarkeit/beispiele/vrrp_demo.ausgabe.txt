@@ -1,0 +1,34 @@
+
+## 1. Zwei Firewalls mit je eigener Adresse (.11 und .12) und eine gemeinsame virtuelle Adresse (.254) für Clients und Server
+ping 10.8.1.254: keine Antwort
+
+## 2. keepalived starten: fw mit Priorität 150, fw2 mit Priorität 100
+fw: v-lan hält 10.8.1.254/24
+fw: v-dmz hält 10.8.2.254/24
+fw2: hält keine virtuelle Adresse
+
+## 3. Verkehr über die virtuelle Adresse als Gateway: Client → Server (ohne NAT)
+http 10.8.2.2:80: server=srv client=10.8.1.2 pfad=/
+$ on cl ip route get 10.8.2.2
+10.8.2.2 via 10.8.1.254 dev v-cl src 10.8.1.2 uid 0 
+    cache 
+Zustandstabelle nach dem Test (Einträge zu 10.8.2.2):
+  fw: 1
+  fw2: 0
+
+## 4. Master fällt aus (keepalived von fw wird beendet): das Backup übernimmt
+Übernahme nach etwa 2 Sekunden (advert_int 1; Wert schwankt)
+fw: hält keine virtuelle Adresse
+fw2: v-lan hält 10.8.1.254/24
+fw2: v-dmz hält 10.8.2.254/24
+http 10.8.2.2:80: server=srv client=10.8.1.2 pfad=/
+
+## 5. Alter Master kehrt zurück: wegen höherer Priorität übernimmt er wieder (Preempt ist Standard)
+fw: v-lan hält 10.8.1.254/24
+fw: v-dmz hält 10.8.2.254/24
+fw2: hält keine virtuelle Adresse
+
+## 6. Grenze: Zustände werden nicht abgeglichen (pfsync-Ersatz fehlt); nach dem Wechsel kennt fw2 nur Verbindungen, die seit der Übernahme über ihn liefen
+  fw: 1 Einträge zu 10.8.2.2
+  fw2: 1 Einträge zu 10.8.2.2
+(Ob eine laufende TCP-Verbindung den Wechsel überlebt, wurde hier nicht geprüft; es hängt von der Zustandsverfolgung ab.)

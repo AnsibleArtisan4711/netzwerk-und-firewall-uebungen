@@ -1,0 +1,25 @@
+nginx: the configuration file nginx.conf syntax is ok
+nginx: configuration file nginx.conf test is successful
+
+## 1. Round Robin: 20 Anfragen
+10 b1
+10 b2
+
+## 2. Gewichtet 3:1 (b1 weight=3): 20 Anfragen
+15 b1
+5 b2
+
+## 3. ip_hash: alle 20 Anfragen desselben Clients landen auf demselben Backend
+20 b2
+
+## 4. least_conn: eine lange Anfrage hält ein Backend besetzt, 10 kurze Anfragen sollten überwiegend das andere treffen
+10 b2
+
+## 5. Passive Prüfung: b2 wird beendet. Alle Anfragen gelingen trotzdem (nginx probiert das nächste Backend), b2 wird nach 2 Fehlern 5 s lang ausgelassen
+20 b1
+Fehlermeldungen im Fehlerprotokoll (connect() failed): 2
+Beispielzeile: *145 connect() failed (111: Connection refused) while connecting to upstream, upstream: "http://10.1.2.12:8080/"
+
+## 6. b2 wieder starten; nach Ablauf von fail_timeout (5 s) nimmt nginx es wieder auf
+10 b1
+10 b2

@@ -1,0 +1,46 @@
+
+## 1. Konfiguration des Dienstes (dnsmasq-lan.conf)
+port=53
+interface=v-lan
+bind-interfaces
+no-resolv
+server=10.8.9.1
+no-hosts
+dhcp-range=10.8.1.100,10.8.1.150,255.255.255.0,2m
+dhcp-option=option:router,10.8.1.1
+dhcp-option=option:dns-server,10.8.1.1
+dhcp-option=option:domain-name,lab.test
+dhcp-leasefile=/tmp/p08-leases
+dhcp-host=02:00:00:aa:bb:01,10.8.1.60,drucker
+address=/srv.lab.test/10.8.2.2
+pid-file=/tmp/p08-lan.pid
+
+## 2. DHCP-Client im LAN fordert eine Adresse an (Hook statt dhclient-script, damit /etc unberührt bleibt)
+DHCPDISCOVER on v-cl to 255.255.255.255 interval 3
+DHCPOFFER of 10.8.1.112 from 10.8.1.1
+DHCPREQUEST for 10.8.1.112 on v-cl to 255.255.255.255
+DHCPACK of 10.8.1.112 from 10.8.1.1
+bound to 10.8.1.112 -- renewal in 57 seconds.
+Hook: reason=BOUND ip=10.8.1.112 router=10.8.1.1 dns=10.8.1.1 domain=lab.test lease=120s
+$ on cl ip -br addr show v-cl
+v-cl@if477       UP             10.8.1.112/24 
+
+## 3. Lease-Tabelle auf der Firewall (Zeitstempel entfernt)
+5a:5c:72:a5:b3:75 10.8.1.112 vm
+
+## 4. DNS: lokaler Eintrag, Weiterleitung an den Upstream und nicht vorhandener Name
+$ on cl dig +short @10.8.1.1 srv.lab.test
+10.8.2.2
+$ on cl dig +short @10.8.1.1 extern.test
+10.8.9.1
+status: REFUSED
+
+## 5. Statische Zuordnung: Gerät mit bekannter MAC bekommt immer dieselbe Adresse
+$ on cl ip -br addr show v-cl
+v-cl@if477       UP             10.8.1.60/24 
+
+## 6. Ausfall des Dienstes: ohne DNS auf der Firewall keine Namensauflösung, Adressen bleiben nutzbar
+$ on cl dig +short +time=1 +tries=1 @10.8.1.1 srv.lab.test
+;; communications error to 10.8.1.1#53: connection refused
+;; no servers could be reached
+ping 10.8.1.1: OK

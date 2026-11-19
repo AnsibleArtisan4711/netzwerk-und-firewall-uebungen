@@ -1,0 +1,53 @@
+nginx: the configuration file nginx.conf syntax is ok
+nginx: configuration file nginx.conf test is successful
+
+## 1. HTTP wird auf HTTPS umgeleitet (301), curl folgt nicht
+$ on cl curl -s -m 3 -I http://shop.lab.test/foo
+HTTP/1.1 301 Moved Permanently
+Server: nginx/1.24.0 (Ubuntu)
+Date: Thu, 19 Nov 2026 19:20:39 GMT
+Content-Type: text/html
+Content-Length: 178
+Connection: keep-alive
+Location: https://shop.lab.test/foo
+
+
+## 2. HTTPS mit der CA des Labors: Verbindung, Protokollversion, Server-Antwort
+$ on cl curl -s -m 3 --cacert /tmp/p11-ca/ca.pem https://shop.lab.test/
+backend=b1
+zaehler=1
+pfad=/
+client=10.1.2.1
+host=shop.lab.test
+x-forwarded-for=10.1.1.2
+x-forwarded-proto=https
+x-real-ip=10.1.1.2
+
+## 3. Ohne die CA lehnt curl ab (Rückgabewert 60)
+$ curl https://shop.lab.test/ → Rückgabewert 60
+
+## 4. HSTS-Header und HTTP-Version
+HTTP/2 200 
+strict-transport-security: max-age=31536000
+Protokoll: HTTP/2
+* SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384 / X25519 / RSASSA-PSS
+* ALPN: server accepted h2
+
+## 5. Zertifikat des Servers wie es der Client sieht
+   subject=O = Lab, CN = shop.lab.test
+   issuer=O = Lab, CN = Lab Root CA
+   X509v3 Subject Alternative Name: 
+       DNS:shop.lab.test, DNS:api.lab.test
+
+## 6. Protokollversionen: TLS 1.2 und 1.3 erlaubt
+tls1_2: TLSv1.2
+tls1_3: TLSv1.3
+
+## 7. Nur TLS 1.3 zulassen (ssl_protocols ändern, nginx neu laden): TLS 1.2 wird abgelehnt
+tls1_2: keine Verbindung (Server lehnt die Version ab)
+tls1_3: TLSv1.3
+
+## 8. Das Backend erfährt über X-Forwarded-Proto, dass außen HTTPS gesprochen wurde
+host=shop.lab.test
+x-forwarded-for=10.1.1.2
+x-forwarded-proto=https

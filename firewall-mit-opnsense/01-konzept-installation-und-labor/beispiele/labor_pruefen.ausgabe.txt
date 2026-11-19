@@ -1,0 +1,25 @@
+
+## 1. Adressen und Routen der Firewall (Stand-in für OPNsense: LAN, DMZ, WAN)
+$ on fw ip -br addr show
+lo               UNKNOWN        127.0.0.1/8 
+v-lan@if414      UP             10.8.1.1/24 
+v-dmz@if416      UP             10.8.2.1/24 
+v-wan@if418      UP             10.8.9.2/24 
+$ on fw ip route
+default via 10.8.9.1 dev v-wan 
+10.8.1.0/24 dev v-lan proto kernel scope link src 10.8.1.1 
+10.8.2.0/24 dev v-dmz proto kernel scope link src 10.8.2.1 
+10.8.9.0/24 dev v-wan proto kernel scope link src 10.8.9.2 
+
+## 2. Ohne Regeln: Weiterleitung eingeschaltet, alles erlaubt (nur im Labor!)
+ping 10.8.1.1: OK
+ping 10.8.2.2: OK
+http 10.8.2.2:80: server=srv client=10.8.1.2 pfad=/
+
+## 3. Das „Internet“ (wan) kennt die internen Netze nicht: keine Rückroute
+$ on wan ip route
+10.8.9.0/24 dev v-wan0 proto kernel scope link src 10.8.9.1 
+http 10.8.9.1:80: keine Antwort
+
+## 4. Der Server im WAN-Netz ist von der Firewall aus erreichbar
+http 10.8.9.1:80: server=wan client=10.8.9.2 pfad=/

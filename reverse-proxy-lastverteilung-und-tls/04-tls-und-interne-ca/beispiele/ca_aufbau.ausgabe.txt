@@ -1,0 +1,51 @@
+
+## 1. Root-CA: Schlüssel und selbstsigniertes Zertifikat (30 Tage; im Echtbetrieb länger und Schlüssel geschützt)
+$ openssl req -x509 -newkey rsa:2048 -nodes -keyout ca.key -out ca.pem -days 30 -subj "/O=Lab/CN=Lab Root CA"
+   subject=O = Lab, CN = Lab Root CA
+   issuer=O = Lab, CN = Lab Root CA
+   notBefore=Nov 19 19:19:41 2026 GMT
+   notAfter=Dec 19 19:19:41 2026 GMT
+   X509v3 Basic Constraints: critical
+       CA:TRUE
+
+## 2. Serverschlüssel und Zertifikatsanforderung (CSR); der Name steht im CSR
+   Certificate request self-signature verify OK
+   subject=O = Lab, CN = shop.lab.test
+
+## 3. CA signiert: Namen kommen über subjectAltName (SAN); der Common Name allein reicht Browsern und curl nicht
+subjectAltName=DNS:shop.lab.test,DNS:api.lab.test
+basicConstraints=CA:FALSE
+keyUsage=digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+   Certificate request self-signature ok
+   subject=O = Lab, CN = shop.lab.test
+   subject=O = Lab, CN = shop.lab.test
+   issuer=O = Lab, CN = Lab Root CA
+   X509v3 Subject Alternative Name: 
+       DNS:shop.lab.test, DNS:api.lab.test
+
+## 4. Kette prüfen
+$ openssl verify -CAfile ca.pem server.crt
+server.crt: OK
+$ openssl x509 -in server.crt -noout -checkhost shop.lab.test
+Hostname shop.lab.test does match certificate
+$ openssl x509 -in server.crt -noout -checkhost www.example.org
+Hostname www.example.org does NOT match certificate
+$ openssl x509 -in server.crt -noout -checkend 86400
+Certificate will not expire
+$ openssl x509 -in server.crt -noout -checkend 3888000
+Certificate will expire
+
+## 5. Passt der Schlüssel zum Zertifikat? (Vergleich des öffentlichen Schlüssels aus Zertifikat und Schlüsseldatei)
+Schlüssel und Zertifikat gehören zusammen
+
+## 6. TLS-Verbindung mit openssl s_server und s_client: mit und ohne CA, mit falschem Namen
+- mit CA und richtigem Namen:
+Verification: OK
+Verify return code: 0 (ok)
+- ohne CA (Vertrauen fehlt):
+Verification error: unable to verify the first certificate
+Verify return code: 21 (unable to verify the first certificate)
+- falscher Name:
+Verification error: hostname mismatch
+Verify return code: 62 (hostname mismatch)

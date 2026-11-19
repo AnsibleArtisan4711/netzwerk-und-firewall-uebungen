@@ -1,0 +1,33 @@
+
+## 1. Sicherung anlegen und Prüfsumme bilden
+59df198c4b966cf3…  sicherung-1.xml
+
+## 2. Wohlgeformtheit prüfen (xmllint) – vor dem Einspielen unbedingt
+config.xml: wohlgeformt
+kaputt.xml:15: parser error : Opening and ending tag mismatch: rule line 15 and rules
+  <rule></rules>
+
+## 3. Änderung vornehmen und Unterschiede anzeigen (diff)
+@@ -12,6 +12,7 @@
+   </interfaces>
+   <rules>
+     <rule><nr>1</nr><action>pass</action><from>lan</from><to>dmz</to><port>80</port></rule>
++    <rule><nr>2</nr><action>pass</action><from>lan</from><to>dmz</to><port>443</port></rule>
+   </rules>
+   <vpn><wireguard><privatekey>GEHEIMER-SCHLUESSEL</privatekey></wireguard></vpn>
+ </firewall-beispiel>
+
+## 4. Vor dem Weitergeben (Support, Forum) Geheimnisse schwärzen
+Zeilen mit Geheimnis im Original: 2
+Zeilen mit Geheimnis in der geteilten Datei: 0
+
+## 5. Verschlüsselt aufbewahren (openssl AES-256, Passwort aus Umgebungsvariable)
+Dateianfang: Salted__
+Klartext in der Datei: 0 Treffer
+Entschlüsselt: identisch mit dem Original
+bad decrypt
+
+## 6. Aufbewahrung: nur die letzten 3 Sicherungen behalten
+auto-3.xml
+auto-4.xml
+auto-5.xml

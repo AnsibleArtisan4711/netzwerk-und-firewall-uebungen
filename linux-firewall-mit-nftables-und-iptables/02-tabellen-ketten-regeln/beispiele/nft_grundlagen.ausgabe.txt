@@ -1,0 +1,68 @@
+
+## 1. Tabelle und Basis-Kette anlegen (Familie inet gilt für IPv4 und IPv6)
+$ on fw nft add table inet demo
+$ on fw nft add chain inet demo input { type filter hook input priority 0 ; policy accept ; }
+
+## 2. Regeln anhängen (add) und vorn einfügen (insert)
+$ on fw nft add rule inet demo input tcp dport 22 counter accept
+$ on fw nft add rule inet demo input tcp dport 23 counter drop
+$ on fw nft insert rule inet demo input iif lo accept
+$ on fw nft -a list table inet demo
+table inet demo { # handle 1
+	chain input { # handle 1
+		type filter hook input priority filter; policy accept;
+		iif "lo" accept # handle 4
+		tcp dport 22 counter packets 0 bytes 0 accept # handle 2
+		tcp dport 23 counter packets 0 bytes 0 drop # handle 3
+	}
+}
+
+## 3. Regel anhand des Handles löschen (Handle der Regel für Port 23 ermitteln)
+$ on fw nft delete rule inet demo input handle 3
+$ on fw nft list chain inet demo input
+table inet demo {
+	chain input {
+		type filter hook input priority filter; policy accept;
+		iif "lo" accept
+		tcp dport 22 counter packets 0 bytes 0 accept
+	}
+}
+
+## 4. Reguläre Kette und jump
+$ on fw nft add chain inet demo web
+$ on fw nft add rule inet demo web tcp dport { 80, 443 } counter accept
+$ on fw nft add rule inet demo input jump web
+$ on fw nft list table inet demo
+table inet demo {
+	chain input {
+		type filter hook input priority filter; policy accept;
+		iif "lo" accept
+		tcp dport 22 counter packets 0 bytes 0 accept
+		jump web
+	}
+
+	chain web {
+		tcp dport { 80, 443 } counter packets 0 bytes 0 accept
+	}
+}
+
+## 5. Familien: ip, ip6, inet, arp, bridge, netdev (nur Auflistung, keine Ausführung)
+$ on fw nft add table ip v4only
+$ on fw nft add table ip6 v6only
+$ on fw nft list tables
+table inet demo
+table ip v4only
+table ip6 v6only
+
+## 6. Aufräumen: eine Kette, auf die noch ein jump zeigt, lässt sich nicht löschen
+$ on fw nft delete chain inet demo web
+Error: Could not process rule: Device or resource busy
+delete chain inet demo web
+                       ^^^
+$ on fw nft flush chain inet demo web
+$ on fw nft delete rule inet demo input handle 8
+$ on fw nft delete chain inet demo web
+$ on fw nft delete table inet demo
+$ on fw nft list tables
+table ip v4only
+table ip6 v6only

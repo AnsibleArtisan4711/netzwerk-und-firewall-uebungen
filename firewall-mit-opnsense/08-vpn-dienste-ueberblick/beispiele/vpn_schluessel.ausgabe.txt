@@ -1,0 +1,24 @@
+
+## 1. Kann der Kernel einen WireGuard-Tunnel anlegen?
+$ ip link add wgtest type wireguard
+Error: Unknown device type.
+
+## 2. Schlüsselpaare für Firewall und Gegenstelle erzeugen (nur Länge und Format, die Schlüssel selbst werden nicht gezeigt)
+privater Schlüssel: 45 Zeichen inkl. Zeilenende; öffentlicher: 45 Zeichen
+Format des öffentlichen Schlüssels: 44 Zeichen Base64 (korrekt)
+
+## 3. Konfiguration der Firewall-Seite aus der Vorlage (private Schlüssel geschwärzt)
+[Interface]
+Address = 10.8.50.1/24
+ListenPort = 51820
+PrivateKey = <geschwärzt>
+
+[Peer]
+# Mitarbeiter unterwegs
+PublicKey = <öffentlicher Schlüssel von road>
+AllowedIPs = 10.8.50.2/32
+
+## 4. Syntax prüfen, ohne den Tunnel zu starten (wg-quick strip entfernt wg-quick-Zeilen und gibt die reine WireGuard-Konfiguration aus)
+wg-quick strip: Konfiguration lesbar
+
+## 5. Was ein Tunnel zusätzlich braucht (auf der Firewall, nicht ausgeführt): Freigabe des UDP-Ports 51820 am WAN, Regeln für die Tunnelschnittstelle, ggf. NAT

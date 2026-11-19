@@ -1,0 +1,47 @@
+
+## 1. Falle: relativer include-Pfad ohne -I findet nichts, und nft meldet trotzdem keinen Fehler
+$ on srv nft -f nftables.conf
+Zeilen im Regelwerk: 0
+
+## 2. Mit Suchpfad (-I .) wird conf.d/*.nft gefunden; erst prüfen, dann laden
+$ on srv nft -I . -c -f nftables.conf
+Prüfung ok
+$ on srv nft -I . -f nftables.conf
+Zeilen im Regelwerk: 8
+http 10.0.2.2:80: OK
+http 10.0.2.2:8080: BLOCKIERT/keine Antwort
+
+## 3. Laufendes Regelwerk sichern mit nft list ruleset
+table inet filter {
+	chain input {
+		type filter hook input priority filter; policy drop;
+		iif "lo" accept
+		ct state established,related accept
+		tcp dport 80 accept
+	}
+}
+
+## 4. Atomar: Datei mit ungültigem Port (99999) ändert NICHTS am laufenden Regelwerk
+$ on srv nft -I . -f nftables.conf
+In file included from nftables.conf:3:1-23:
+./conf.d/20-kaputt.nft:4:15-19: Error: Service out of range
+    tcp dport 99999 accept
+              ^^^^^
+http 10.0.2.2:8080: BLOCKIERT/keine Antwort
+
+## 5. Neues Regelwerk in einem Schritt austauschen (flush + Neuaufbau in einer Transaktion)
+$ on srv nft -I . -f nftables.conf
+http 10.0.2.2:8080: OK
+
+## 6. Zurück zur Sicherung (wiederherstellen aus Datei) und Zustand prüfen
+$ on srv nft flush ruleset
+http 10.0.2.2:80: OK
+$ on srv nft -f sicherung.nft
+http 10.0.2.2:80: OK
+http 10.0.2.2:8080: BLOCKIERT/keine Antwort
+
+## 7. Dauerhaft: so sieht die Einbindung in systemd aus (nur gezeigt, hier nicht ausgeführt)
+# /etc/nftables.conf wird vom Dienst nftables.service beim Start geladen:
+#   systemctl enable --now nftables
+#   systemctl reload nftables    # lädt die Datei neu
+#   nft -c -f /etc/nftables.conf # vorher prüfen

@@ -1,0 +1,24 @@
+
+## 1. Client öffnet HTTP-Verbindung, Firewall-Tabelle danach (Verbindung wird nach Ende noch gehalten: TIME_WAIT)
+tcp      6 119 TIME_WAIT src=10.0.1.2 dst=10.0.2.2 sport=44778 dport=80 src=10.0.2.2 dst=10.0.1.2 sport=80 dport=44778 [ASSURED] 
+
+## 2. Zähler der Regeln
+		ct state invalid counter packets 0 bytes 0 drop
+		ct state established,related counter packets 12 bytes 906 accept
+		iifname "v-fw1" ct state new tcp dport 80 counter packets 1 bytes 60 accept
+		iifname "v-fw1" ct state new icmp type echo-request counter packets 0 bytes 0 accept
+		iifname "v-fw1" ct state new udp dport 5353 counter packets 0 bytes 0 accept
+
+## 3. Rückrichtung ohne vorherige Verbindung: Server -> Client wird verworfen
+Server->Client: BLOCKIERT (kein established, kein new aus v-fw2 erlaubt)
+
+## 4. UDP und ICMP: scheinbar verbindungslos, trotzdem mit Zustand
+UDP-Antwort: b'echo:hallo'
+udp      17 29 src=10.0.1.2 dst=10.0.2.2 sport=33067 dport=5353 src=10.0.2.2 dst=10.0.1.2 sport=5353 dport=33067 
+icmp     1 29 src=10.0.1.2 dst=10.0.2.2 type=8 code=0 src=10.0.2.2 dst=10.0.1.2 type=0 code=0  mark=0 
+
+## 5. Zähler, Zeitlimits und Tabellengröße
+net.netfilter.nf_conntrack_tcp_timeout_established = 432000
+net.netfilter.nf_conntrack_udp_timeout = 30
+net.netfilter.nf_conntrack_icmp_timeout = 30
+3

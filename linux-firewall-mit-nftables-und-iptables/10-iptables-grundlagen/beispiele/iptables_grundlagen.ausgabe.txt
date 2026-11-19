@@ -1,0 +1,76 @@
+
+## 1. Welche iptables-Variante ist installiert?
+$ iptables --version
+iptables v1.8.10 (nf_tables)
+$ ip6tables --version
+ip6tables v1.8.10 (nf_tables)
+
+## 2. Standard-Richtlinie auf DROP, dann erlauben (Server-Namespace)
+$ on srv iptables -P INPUT DROP
+$ on srv iptables -A INPUT -i lo -j ACCEPT
+$ on srv iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+$ on srv iptables -A INPUT -p tcp --dport 80 -j ACCEPT
+$ on srv iptables -A INPUT -p icmp --icmp-type echo-request -m limit --limit 5/second -j ACCEPT
+http 10.0.2.2:80: OK
+http 10.0.2.2:8080: BLOCKIERT/keine Antwort
+ping 10.0.2.2: OK
+
+## 3. Regeln mit Zählern und Nummern anzeigen (-L -n -v --line-numbers)
+$ on srv iptables -L INPUT -n -v --line-numbers
+Chain INPUT (policy DROP 2 packets, 120 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1        0     0 ACCEPT     0    --  lo     *       0.0.0.0/0            0.0.0.0/0           
+2        5   331 ACCEPT     0    --  *      *       0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+3        1    60 ACCEPT     6    --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:80
+4        1    84 ACCEPT     1    --  *      *       0.0.0.0/0            0.0.0.0/0            icmptype 8 limit: avg 5/sec burst 5
+
+## 4. Regel einfügen (-I), ersetzen (-R) und löschen (-D)
+$ on srv iptables -I INPUT 3 -p tcp --dport 8080 -s 10.0.1.0/24 -j ACCEPT
+http 10.0.2.2:8080: OK
+$ on srv iptables -R INPUT 3 -p tcp --dport 8080 -s 10.0.9.0/24 -j ACCEPT
+http 10.0.2.2:8080: BLOCKIERT/keine Antwort
+$ on srv iptables -D INPUT 3
+$ on srv iptables -S INPUT
+-P INPUT DROP
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A INPUT -p tcp -m tcp --dport 80 -j ACCEPT
+-A INPUT -p icmp -m icmp --icmp-type 8 -m limit --limit 5/sec -j ACCEPT
+
+## 5. NAT-Tabelle und forward in der Firewall mit iptables
+$ on fw iptables -t nat -A POSTROUTING -o v-fw2 -j MASQUERADE
+$ on fw iptables -P FORWARD DROP
+$ on fw iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+$ on fw iptables -A FORWARD -i v-fw1 -o v-fw2 -p tcp --dport 80 -j ACCEPT
+http 10.0.2.2:80: OK
+http 10.0.2.2:8080: BLOCKIERT/keine Antwort
+$ on fw iptables -t nat -L -n -v
+Chain PREROUTING (policy ACCEPT 0 packets, 0 bytes)
+ pkts bytes target     prot opt in     out     source               destination         
+
+Chain INPUT (policy ACCEPT 0 packets, 0 bytes)
+ pkts bytes target     prot opt in     out     source               destination         
+
+Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
+ pkts bytes target     prot opt in     out     source               destination         
+
+Chain POSTROUTING (policy ACCEPT 0 packets, 0 bytes)
+ pkts bytes target     prot opt in     out     source               destination         
+    1    60 MASQUERADE  0    --  *      v-fw2   0.0.0.0/0            0.0.0.0/0           
+
+## 6. Dieselben Regeln aus Sicht von nft: iptables-nft legt Tabellen im nf_tables-Kern an
+# Warning: table ip nat is managed by iptables-nft, do not touch!
+# Warning: table ip filter is managed by iptables-nft, do not touch!
+table ip nat {
+	chain POSTROUTING {
+		type nat hook postrouting priority srcnat; policy accept;
+		oifname "v-fw2" counter packets 1 bytes 60 masquerade
+	}
+}
+table ip filter {
+	chain FORWARD {
+		type filter hook forward priority filter; policy drop;
+		ct state related,established counter packets 12 bytes 906 accept
+		iifname "v-fw1" oifname "v-fw2" tcp dport 80 counter packets 1 bytes 60 accept
+	}
+}

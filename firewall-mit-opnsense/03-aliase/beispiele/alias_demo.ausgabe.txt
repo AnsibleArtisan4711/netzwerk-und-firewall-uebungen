@@ -1,0 +1,44 @@
+
+## 1. Aliase als Sets: Web-Server (Hosts), Web-Ports (Ports), Verwaltungsnetz (Netz)
+$ on fw nft list sets
+table inet fw {
+	set alias_webserver {
+		type ipv4_addr
+		elements = { 10.8.2.2 }
+	}
+	set alias_webports {
+		type inet_service
+		elements = { 80, 8080 }
+	}
+	set alias_verwaltung {
+		type ipv4_addr
+		flags interval
+		elements = { 10.8.1.0/24 }
+	}
+}
+
+## 2. Die Regel verwendet nur die Namen; Test
+http 10.8.2.2:80: server=srv client=10.8.1.2 pfad=/
+http 10.8.2.2:8080: server=srv client=10.8.1.2 pfad=/
+http 10.8.2.2:22: keine Antwort
+
+## 3. Alias erweitern: Port 22 aufnehmen – die Regel bleibt unverändert
+$ on fw nft add element inet fw alias_webports { 22 }
+http 10.8.2.2:22: server=srv client=10.8.1.2 pfad=/
+
+## 4. Alias verkleinern: Port 8080 entfernen
+$ on fw nft delete element inet fw alias_webports { 8080 }
+http 10.8.2.2:8080: keine Antwort
+http 10.8.2.2:80: server=srv client=10.8.1.2 pfad=/
+
+## 5. Zweiter Server: nur ein Eintrag im Alias nötig (hier eine weitere Adresse 10.8.2.3 als Beispiel)
+$ on fw nft add element inet fw alias_webserver { 10.8.2.3 }
+$ on fw nft list set inet fw alias_webserver
+table inet fw {
+	set alias_webserver {
+		type ipv4_addr
+		elements = { 10.8.2.2, 10.8.2.3 }
+	}
+}
+
+## 6. Verschachtelte Aliase (ein Alias aus Aliasen) werden hier nicht nachgebildet: nftables kann Sets nicht ineinander einbetten (OPNsense kann es; nicht bestätigt)

@@ -1,0 +1,38 @@
+
+## 1. HAProxy prüfen und starten
+Configuration file is valid
+
+## 2. HTTP -> HTTPS (301) und HTTPS mit HTTP/2
+$ on cl curl -s -m 3 -o /dev/null -w HTTP %{http_code} -> %{redirect_url}\n http://shop.lab.test/x
+HTTP 301 -> https://shop.lab.test/x
+HTTP/2 200 
+strict-transport-security: max-age=31536000
+Protokoll: HTTP/2
+
+## 3. SNI: je nach Servername liefert HAProxy ein anderes Zertifikat und ein anderes Backend
+- shop.lab.test: O = Lab, CN = shop.lab.test
+  Backend: b1
+- api.lab.test: O = Lab, CN = api.lab.test
+  Backend: b2
+
+## 4. Header, die das Backend sieht (TLS wurde am Proxy beendet)
+host=shop.lab.test
+x-forwarded-for=10.1.1.2
+x-forwarded-proto=https
+
+## 5. Passthrough (Port 8443): das Zertifikat kommt vom dahinterliegenden TLS-Server, HAProxy sieht keinen Klartext
+subject=O = Lab, CN = shop.lab.test
+Verification: OK
+<HTML><BODY BGCOLOR="#ffffff">
+<pre>
+
+
+## 6. HAProxy-Zustand
+web          FRONTEND   OPEN
+b1_dienst    b1         no check
+b1_dienst    BACKEND    UP
+b2_dienst    b2         no check
+b2_dienst    BACKEND    UP
+durch        FRONTEND   OPEN
+tls_server   s          no check
+tls_server   BACKEND    UP

@@ -1,0 +1,41 @@
+#!/usr/sbin/nft -f
+# Sets, Maps und Verdict-Maps: dieselbe Wirkung wie viele Einzelregeln, aber übersichtlicher und schneller.
+flush ruleset
+
+table inet filter {
+  # benannter Set mit Timeout: Einträge verfallen von selbst
+  set gesperrt {
+    type ipv4_addr
+    flags timeout
+    timeout 1h
+  }
+  # Intervalle (Netze und Bereiche)
+  set intern {
+    type ipv4_addr
+    flags interval
+    elements = { 10.0.1.0/24, 192.168.0.0/16 }
+  }
+  # Verkettung Adresse . Port
+  set freigaben {
+    type ipv4_addr . inet_service
+    elements = { 10.0.1.2 . 8080, 10.0.1.2 . 22 }
+  }
+  # Verdict-Map: Port -> Aktion
+  map dienste {
+    type inet_service : verdict
+    elements = { 80 : accept, 8080 : jump verwaltung, 23 : drop }
+  }
+  chain verwaltung {
+    ip saddr @intern accept
+    drop
+  }
+  chain input {
+    type filter hook input priority 0; policy drop;
+    iif "lo" accept
+    ct state established,related accept
+    ip saddr @gesperrt counter drop
+    ip saddr . tcp dport @freigaben accept
+    tcp dport vmap @dienste
+    counter comment "nichts passt"
+  }
+}

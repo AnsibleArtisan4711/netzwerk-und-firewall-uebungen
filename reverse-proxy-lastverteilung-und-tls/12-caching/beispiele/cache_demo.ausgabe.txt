@@ -1,0 +1,27 @@
+nginx: the configuration file nginx.conf syntax is ok
+nginx: configuration file nginx.conf test is successful
+
+## 1. Erste Anfrage MISS (geht ans Backend), die folgenden HIT (aus dem Cache: gleiche Antwortnummer)
+antwort-nr=1 von b1 | X-Cache-Status: MISS
+antwort-nr=1 von b1 | X-Cache-Status: HIT
+antwort-nr=1 von b1 | X-Cache-Status: HIT
+
+## 2. Ohne Cache (/roh): jede Anfrage erreicht das Backend, die Nummer steigt
+antwort-nr=2 von b1
+antwort-nr=3 von b1
+antwort-nr=4 von b1
+
+## 3. Cache-Datei auf dem Proxy
+Dateien im Cache-Ordner: 1
+
+## 4. Bypass: mit X-Refresh geht die Anfrage ans Backend (BYPASS), die Antwort ersetzt den Cache-Eintrag
+antwort-nr=5 von b1 | X-Cache-Status: BYPASS
+antwort-nr=5 von b1 | X-Cache-Status: HIT
+
+## 5. Ablauf: nach mehr als 10 s (max-age des Backends; nginx rechnet auf ganze Sekunden) ist der Eintrag veraltet; die nächste Anfrage holt eine neue Antwort (EXPIRED)
+antwort-nr=6 von b1 | X-Cache-Status: EXPIRED
+
+## 6. Backend fällt aus: nach Ablauf liefert nginx die veraltete Antwort (STALE) statt eines Fehlers
+antwort-nr=6 von b1 | X-Cache-Status: STALE
+- ohne Cache (/roh) in derselben Lage:
+HTTP 502

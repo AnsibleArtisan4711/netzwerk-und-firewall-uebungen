@@ -1,0 +1,43 @@
+
+## Fehler 1: Reihenfolge – das drop steht vor dem accept
+http 10.0.2.2:80: BLOCKIERT/keine Antwort
+-- Diagnose: Zähler zeigen, welche Regel trifft
+		tcp dport 80 counter packets 2 bytes 120 drop
+		tcp dport 80 counter packets 0 bytes 0 accept
+-- Behebung: Regel ersetzen, indem das drop gelöscht wird
+http 10.0.2.2:80: OK
+
+## Fehler 2: falscher Schnittstellenname in der Regel (eth0 statt v-fw1)
+http 10.0.2.2:80: BLOCKIERT/keine Antwort
+-- Diagnose: Zähler der Regel bleibt 0; tatsächliche Namen mit ip -br link
+		iifname "eth0" tcp dport 80 counter packets 0 bytes 0 accept
+v-fw1@if130      UP             e6:ea:c2:ed:fb:c7 <BROADCAST,MULTICAST,UP,LOWER_UP> 
+v-fw2@if132      UP             1e:d2:da:d6:29:45 <BROADCAST,MULTICAST,UP,LOWER_UP> 
+-- Behebung: iifname v-fw1
+http 10.0.2.2:80: OK
+
+## Fehler 3: Rückrichtung fehlt (kein ct state established)
+-- Diagnose: tcpdump auf beiden Firewall-Schnittstellen mitschneiden, während der Client einmal zugreift
+http 10.0.2.2:80: BLOCKIERT/keine Antwort
+innen: SYN=2  SYN/ACK=0
+aussen: SYN=2  SYN/ACK=4
+(innen = v-fw1 zum Client, aussen = v-fw2 zum Server: Die Antwort SYN/ACK des Servers kommt außen an, wird aber nicht nach innen weitergegeben.)
+
+## Fehler 4: ip_forward ist aus
+http 10.0.2.2:80: BLOCKIERT/keine Antwort
+-- Diagnose: forward-Zähler bleibt 0, obwohl die Pakete an der Schnittstelle ankommen
+		counter packets 0 bytes 0
+net.ipv4.ip_forward = 0
+http 10.0.2.2:80: OK
+		counter packets 12 bytes 914
+
+## Werkzeug: nft trace verfolgt ein Paket durch alle Ketten
+inet f pre packet: iif "v-fw1" ether saddr 06:58:de:9e:54:95 ether daddr e6:ea:c2:ed:fb:c7 ip saddr 10.0.1.2 ip daddr 10.0.2.2 ip dscp cs0 ip ecn not-
+inet f pre rule tcp dport 80 meta nftrace set 1 (verdict continue)
+inet f pre policy accept 
+inet f forward packet: iif "v-fw1" oif "v-fw2" ether saddr 06:58:de:9e:54:95 ether daddr e6:ea:c2:ed:fb:c7 ip saddr 10.0.1.2 ip daddr 10.0.2.2 ip dscp
+inet f forward rule iifname "v-fw1" tcp dport 80 accept (verdict accept)
+inet f pre packet: iif "v-fw1" ether saddr 06:58:de:9e:54:95 ether daddr e6:ea:c2:ed:fb:c7 ip saddr 10.0.1.2 ip daddr 10.0.2.2 ip dscp cs0 ip ecn not-
+inet f pre rule tcp dport 80 meta nftrace set 1 (verdict continue)
+inet f pre policy accept 
+inet f forward packet: iif "v-fw1" oif "v-fw2" ether saddr 06:58:de:9e:54:95 ether daddr e6:ea:c2:ed:fb:c7 ip saddr 10.0.1.2 ip daddr 10.0.2.2 ip dscp
