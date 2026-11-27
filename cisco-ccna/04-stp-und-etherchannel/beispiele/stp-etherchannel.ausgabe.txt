@@ -1,0 +1,53 @@
+
+## 1. Root-Bridge-Wahl: die kleinste Bridge-ID gewinnt (Priorität, dann MAC); alle Prioritäten sind gleich (32768)
+ccs1: bridge_id 8000.2:0:0:0:0:1 root_port 0 root_path_cost 0 root_id 8000.020000000001
+ccs2: bridge_id 8000.2:0:0:0:0:2 root_port 1 root_path_cost 2 root_id 8000.020000000001
+ccs3: bridge_id 8000.2:0:0:0:0:3 root_port 2 root_path_cost 2 root_id 8000.020000000001
+Portzustände:
+  ccs1 p12a state forwarding
+  ccs1 p31b state forwarding
+  ccs2 p12b state forwarding
+  ccs2 p23a state forwarding
+  ccs3 p23b state blocking
+  ccs3 p31a state forwarding
+
+## 2. Priorität 4096 auf ccs3: ccs3 wird neue Root-Bridge, die Topologie wird neu berechnet
+ccs1: bridge_id 8000.2:0:0:0:0:1 root_port 2 root_path_cost 2 root_id 1000.020000000003
+ccs2: bridge_id 8000.2:0:0:0:0:2 root_port 2 root_path_cost 2 root_id 1000.020000000003
+ccs3: bridge_id 1000.2:0:0:0:0:3 root_port 0 root_path_cost 0 root_id 1000.020000000003
+Portzustände:
+  ccs1 p12a state forwarding
+  ccs1 p31b state forwarding
+  ccs2 p12b state blocking
+  ccs2 p23a state forwarding
+  ccs3 p23b state forwarding
+  ccs3 p31a state forwarding
+
+## 3. Ausfall der Verbindung zwischen ccs2 und ccs1 (Anschluss p12b): ein gesperrter Port übernimmt, Wiederherstellungszeit gemessen (klassisches STP, mit verkürzten Zeiten)
+Antworten vor dem Ausfall: 15, nach dem Ausfall: 28
+Zeit ohne Antwort ab dem Ausfall bis zur ersten neuen Antwort: 13.3 s
+
+## 4. BPDU Guard als Linux-Entsprechung: ein Port mit guard on wird bei einer BPDU abgeschaltet (kein BPDU Guard im Sinn von IOS)
+$ ip netns exec ccs2 bridge -d link show dev s2x | grep -oE 'state [a-z]+|guard (on|off)' | paste -sd' '
+state disabled guard on
+Der angeschlossene „Switch“ (Priorität 0) sendet BPDUs; der Port s2x wird daraufhin gesperrt (disabled); das entspricht dem Zweck von BPDU Guard an Zugangsports.
+
+## 4b. Root Guard als Linux-Entsprechung (root_block): ein Port nimmt keine überlegene Root-Information an
+$ ip netns exec ccs2 bridge -d link show dev s2x | grep -oE 'state [a-z]+|root_block (on|off)' | paste -sd' '
+state listening root_block on
+$ ip -n ccs2 -d link show br0 | grep -oE 'bridge_id [^ ]+' >/dev/null; echo -n 'root_id von ccs2: '; ip netns exec ccs2 cat /sys/class/net/br0/bridge/root_id
+root_id von ccs2: 1000.020000000001
+Die angeschlossene Bridge hat Priorität 0 und wäre die bessere Root-Bridge; ccs2 behält ccs1 (Priorität 4096) als Root und übernimmt die bessere Information nicht, solange root_block aktiv ist.
+
+## 5. Schleife ohne STP: eine einzige Broadcast-Anfrage kreist im Dreieck (Zähler eines Anschlusses)
+Empfangene Pakete an q12a: vor der Anfrage 193072, nach 2 s 987270, eine Sekunde später 1402882 (Zuwachs 415612 pro Sekunde)
+Der Zähler läuft schon vor der Anfrage hoch, weil beim Einschalten der Schnittstellen automatische Meldungen (zum Beispiel IPv6-Nachbarschaft) in die Schleife geraten. Ohne STP kreisen Broadcasts endlos; die Zähler wachsen dauerhaft, bis die Schleife entfernt wird.
+
+## 6. EtherChannel: Lastverteilung per Hash (Modell) und Aushandlung (Lehrbuchwissen)
+Quell-MAC (hier: Quell-IP als Ersatz)    Link0 20  Link1 20  (40 Flüsse)
+Quell- und Ziel-IP                       Link0 19  Link1 21  (40 Flüsse)
+nur Ziel-IP                              Link0 40  Link1  0  (40 Flüsse)
+Merke: Ein einzelner Fluss nutzt immer nur einen Link; die Verteilung hängt vom gewählten Hash ab.
+
+Modus-Kombinationen (Lehrbuchwissen): LACP active/active, active/passive -> Channel; passive/passive -> kein Channel; PAgP desirable/auto; on/on ohne Protokoll; LACP mit PAgP -> kein Channel.
+Nicht ausgeführt: Rapid PVST+, PortFast, Loop Guard, LACP (kein bonding-Modul im Container), IOS-Befehle.

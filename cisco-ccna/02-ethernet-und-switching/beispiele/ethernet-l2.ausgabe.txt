@@ -1,0 +1,75 @@
+
+## 1. Aufbau: ein Switch (Linux-Bridge) mit drei Endgeräten
+$ ip -n ccsw -br link show | grep -E 'p[123]' | awk '{print $1, $2}'
+p1@if754 UP
+p2@if756 UP
+p3@if758 UP
+
+## 2. MAC-Adresse zerlegen (Python): Individual/Group-Bit, Universal/Local-Bit, OUI
+00:1b:63:84:45:e6  Unicast   herstellerweit, OUI 00:1b:63
+01:00:5e:00:00:05  Multicast kein Herstellerbezug
+02:00:00:00:00:01  Unicast   lokal vergeben (kein Hersteller)
+ff:ff:ff:ff:ff:ff  Broadcast kein Herstellerbezug
+01:80:c2:00:00:00  Multicast kein Herstellerbezug
+
+## 3. Erster Austausch: der Switch flutet die ARP-Anfrage, die Antwort geht nur zum Fragenden
+$ ip netns exec cca ping -c1 -W1 192.168.50.12 | grep -E 'transmitted'
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+--- was Gerät 3 gesehen hat (es ist weder Sender noch Ziel)
+$ tshark -r cap/c.pcap -Y 'arp || icmp' -T fields -e eth.src -e eth.dst -e _ws.col.Info 2>/dev/null | sed 's/\t/  /g' | cut -c1-90
+02:00:00:00:00:01  ff:ff:ff:ff:ff:ff  Who has 192.168.50.12? Tell 192.168.50.11
+
+## 4. MAC-Tabelle (FDB) des Switches
+$ ip netns exec ccsw bridge fdb show br br0 | grep -v permanent | grep -v self | awk '{print $1, $3, $5}' | sort
+02:00:00:00:00:01 p1 br0
+02:00:00:00:00:02 p2 br0
+
+## 5. Altern: Einträge verschwinden nach der Alterungszeit (hier 3 s; die Standardvorgabe von Linux ist 300 s)
+$ ip netns exec cca ping -c1 -W1 192.168.50.12 | grep -E 'transmitted'
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+$ ip netns exec ccsw bridge fdb show br br0 | grep -vE 'permanent|self' | wc -l | sed 's/^/Einträge direkt nach dem Verkehr: /'
+Einträge direkt nach dem Verkehr: 2
+$ ip netns exec ccsw bridge fdb show br br0 | grep -vE 'permanent|self' | wc -l | sed 's/^/Einträge nach 9 s ohne Verkehr: /'
+Einträge nach 9 s ohne Verkehr: 0
+$ ip netns exec cchb ping -c1 -W1 192.168.50.13 | grep -E 'transmitted'
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+$ ip netns exec ccsw bridge fdb show br br0 | grep -vE 'permanent|self' | awk '{print $1, $3}' | sort
+02:00:00:00:00:02 p2
+02:00:00:00:00:03 p3
+Der Switch lernt die Quell-MAC jedes Rahmens neu; Einträge, die nicht erneuert werden, altern aus.
+
+## 6. Schnittstellenzustand und Geschwindigkeit mit ethtool (virtuelle Schnittstelle, Werte sind Modellwerte)
+$ ip netns exec cca ethtool a0 2>/dev/null | grep -E 'Speed|Duplex|Link detected'
+	Speed: 10000Mb/s
+	Duplex: Full
+	Link detected: yes
+--- Anschluss p2 des Switches ausfallen lassen: Endgerät 2 verliert den Link, das Gegenstück ebenso
+$ ip netns exec cchb ethtool b0 2>/dev/null | grep 'Link detected'
+	Link detected: no
+$ ip netns exec cca ping -c1 -W1 192.168.50.12 2>&1 | grep -E 'transmitted'
+1 packets transmitted, 0 received, 100% packet loss, time 0ms
+$ ip netns exec cca ping -c1 -W1 192.168.50.12 2>&1 | grep -E 'transmitted'
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+
+## 7. LLDP: Nachbarn entdecken (lldpd, herstellerneutrales Protokoll, Standard IEEE 802.1AB)
+$ lldpcli -u /tmp/ccna/l1/s show neighbors summary 2>&1 | grep -E 'Interface|ChassisID|SysName|PortID' | sed -E 's/^ +//'
+Interface:    l1, via: LLDP
+ChassisID:    mac 26:fe:bc:c3:c4:2e
+SysName:      sw-b
+PortID:       mac 26:fe:bc:c3:c4:2e
+
+## 7b. CDP-Rahmen (Cisco Discovery Protocol) erzeugt lldpd nur mit dem Schalter -cc; hier nur der Rahmen im Mitschnitt
+$ tshark -r cdp.pcap -Y cdp -T fields -e eth.dst -e cdp.deviceid -e cdp.portid 2>/dev/null | sort -u | head -2
+01:00:0c:cc:cc:cc	sw-a	l1
+Zieladresse 01:00:0c:cc:cc:cc ist die Cisco-Multicast-Adresse für CDP; ein echter Catalyst wurde nicht eingesetzt.
+
+## 8. Verkabelung (Lehrbuchwissen) und Zählerauswertung (erfundene Beispielwerte)
+T568B (Pin: Farbe): 1 weiß/orange, 2 orange, 3 weiß/grün, 4 blau, 5 weiß/blau, 6 grün, 7 weiß/braun, 8 braun
+Gerade Verbindung (Endgerät zu Switch): beide Enden T568B. Gekreuzt (gleichartige Geräte): ein Ende T568A; moderne Anschlüsse erkennen das mit Auto-MDI/MDIX.
+Medien: Kupfer bis 100 m (Cat 5e/6), Multimode-Glasfaser für Gebäude, Singlemode-Glasfaser für große Entfernungen (Faustwerte, Herstellerangaben prüfen).
+
+Anschluss  Befund (Zählerwerte sind erfunden)
+Gi0/1      unauffällig
+Gi0/2      CRC-Fehler: schlechtes Kabel, Stecker oder Störung; zu kurze Rahmen: Kollisionen oder Fehler beim Sender
+Gi0/3      späte Kollisionen: Duplexfehler oder zu langes Kabel
+Gi0/4      Link wechselt ständig: Kabel, Stecker oder Gegenstelle

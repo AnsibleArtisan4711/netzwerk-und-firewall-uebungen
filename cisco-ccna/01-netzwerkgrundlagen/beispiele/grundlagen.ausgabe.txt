@@ -1,0 +1,56 @@
+
+## 1. Aufbau: zwei Netze, ein Router (Modell der Rollen Endgerät und Router)
+$ ip -n cch1 -br addr show h1e; ip -n cch2 -br addr show h2e; ip -n ccr -br addr show | grep -v lo
+h1e@if749        UP             192.168.1.10/24 
+h2e@if751        UP             192.168.2.10/24 
+r1e@if750        UP             192.168.1.1/24 
+r2e@if752        UP             192.168.2.1/24 
+
+## 2. HTTP-Abfrage über den Router, mitgeschnitten am Server-Anschluss: Schichten 2, 3 und 4 in einem Paket
+$ ip netns exec cch1 curl -s --local-port 40000 http://192.168.2.10:8080/ | head -1
+Hallo aus dem Labor
+--- erstes TCP-Paket des Clients (SYN) mit Ethernet-, IP- und TCP-Feldern
+$ tshark -r http.pcap -Y 'tcp.flags.syn==1 && tcp.flags.ack==0' -T fields -e eth.src -e eth.dst -e ip.src -e ip.dst -e ip.ttl -e tcp.srcport -e tcp.dstport 2>/dev/null | head -1 | awk -F'\t' '{print "Eth " $1 " -> " $2 "\nIP  " $3 " -> " $4 "  TTL " $5 "\nTCP " $6 " -> " $7}'
+Eth 02:00:00:00:02:fe -> 02:00:00:00:02:01
+IP  192.168.1.10 -> 192.168.2.10  TTL 63
+TCP 40000 -> 8080
+Die Quell-MAC am Server ist die des Routers (02:00:00:00:02:fe), nicht die des Clients: Ethernet gilt nur bis zum nächsten Gerät, IP-Adressen bleiben Ende zu Ende. Der TTL-Wert ist um 1 gesunken.
+--- TCP-Flags der ersten Pakete (SYN, SYN/ACK, ACK = Dreiwege-Handshake)
+$ tshark -r http.pcap -Y tcp -T fields -e tcp.srcport -e tcp.flags.str 2>/dev/null | head -3 | awk -F'\t' '{print $1, $2}'
+40000 ··········S·
+8080 ·······A··S·
+40000 ·······A····
+
+## 3. ARP-Tabellen: wer kennt wen (nur das jeweils nächste Gerät)
+$ ip -n cch1 neigh show | grep -v FAILED | awk '{print $1, $3, $5}'
+192.168.1.1 h1e 02:00:00:00:01:fe
+$ ip -n cch2 neigh show | grep -v FAILED | awk '{print $1, $3, $5}'
+192.168.2.1 h2e 02:00:00:00:02:fe
+
+## 4. traceroute: der Router erscheint als erster Hop
+$ ip netns exec cch1 traceroute -n -q1 -w1 192.168.2.10 | sed 's/ms.*/ms/'
+traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
+ 1  192.168.1.1  0.139 ms
+ 2  192.168.2.10  0.105 ms
+
+## 5. Topologien: Kennzahlen mit networkx (Stern, Ring, Voll vermascht, Bus als Kette)
+Topologie        Links    Ø Hops    Ausfall eines Links trennt?
+Stern            4        1.60      ja
+Ring             5        1.50      nein
+Voll vermascht   10       1.00      nein
+Bus (Kette)      4        2.00      ja
+Voll vermascht kostet bei n Geräten n(n-1)/2 Links (hier 10); der Ring übersteht den Ausfall eines Links.
+
+## 6. Befehlsmodus-Modell: Abkürzungen eindeutig auflösen (eigenes Modell, kein Abbild von IOS)
+privileged  conf  -> configure
+privileged  co    -> mehrdeutig: configure, copy
+user        sh    -> show
+user        conf  -> unbekannt
+config      int   -> interface
+Das Modell zeigt nur das Prinzip der eindeutigen Abkürzung; die echten Befehlsbäume von IOS wurden nicht geprüft.
+
+## 7. Planprüfung: Namensschema und doppelte Adressen in einer Geräteliste
+sw-lab-01  192.168.10.2   ok
+sw-lab-02  192.168.10.3   IP-Adresse doppelt
+rtr-lab-1  192.168.10.1   ok
+SW_Lab_03  192.168.10.3   Name entspricht nicht dem Schema typ-lab-nr; IP-Adresse doppelt

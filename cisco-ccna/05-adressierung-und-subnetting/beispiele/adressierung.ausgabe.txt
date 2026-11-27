@@ -1,0 +1,61 @@
+
+## 1. Adresse zerlegen: Netz, Broadcast, Hosts, Maske (Python ipaddress)
+192.168.10.77/26  Netz 192.168.10.64    Broadcast 192.168.10.127  Maske 255.255.255.192 Wildcard 0.0.0.63        Hosts 62
+10.1.2.3/20       Netz 10.1.0.0         Broadcast 10.1.15.255     Maske 255.255.240.0   Wildcard 0.0.15.255      Hosts 4094
+172.16.5.9/30     Netz 172.16.5.8       Broadcast 172.16.5.11     Maske 255.255.255.252 Wildcard 0.0.0.3         Hosts 2
+Binär: 192.168.10.77 = 11000000.10101000.00001010.01001101
+
+## 2. VLSM-Plan: Netze nach Größe von groß nach klein aus 192.168.100.0/24 verteilen
+Verwaltung   braucht 100 Hosts -> 192.168.100.0/25   nutzbar 126  Gateway-Vorschlag 192.168.100.1
+Labor        braucht  50 Hosts -> 192.168.100.128/26 nutzbar  62  Gateway-Vorschlag 192.168.100.129
+Gäste        braucht  25 Hosts -> 192.168.100.192/27 nutzbar  30  Gateway-Vorschlag 192.168.100.193
+Server       braucht  12 Hosts -> 192.168.100.224/28 nutzbar  14  Gateway-Vorschlag 192.168.100.225
+Link R1-R2   braucht   2 Hosts -> 192.168.100.240/30 nutzbar   2  Gateway-Vorschlag 192.168.100.241
+Rest im Block ab 192.168.100.244 bis 192.168.100.255
+
+## 3. Besondere Adressen erkennen
+127.0.0.1        Loopback
+169.254.10.5     Link-Local (APIPA)
+10.0.0.1         privat (RFC 1918)
+172.32.0.1       öffentlich
+192.0.2.10       Dokumentationsnetz
+224.0.0.5        Multicast
+255.255.255.255  Broadcast
+8.8.8.8          öffentlich
+
+## 4. IPv6 als Rechnung: Kurzschreibweise, EUI-64, Solicited-Node, Aufteilung /48 in /64 (im Container nicht ausgeführt)
+Kurzform: 2001:db8::1  Langform: 2001:0db8:0000:0000:0000:0000:0000:0001
+EUI-64 aus MAC 00:1b:63:84:45:e6 -> fe80::21b:63ff:fe84:45e6 (7. Bit des ersten Bytes invertiert, ff:fe in der Mitte)
+Solicited-Node-Multicast dazu: ff02::1:ff84:45e6
+Ein /48 enthält 65536 /64-Netze, z. B. 2001:db8:abcd::/64, 2001:db8:abcd:1::/64, 2001:db8:abcd:2::/64
+Adresstypen: fe80::/10 Link-Local, fc00::/7 Unique Local, ff00::/8 Multicast, 2000::/3 Global Unicast, ::1 Loopback
+
+## 5. Zusammenfassen von Routen (Summarization)
+Eingabe: 192.168.0.0/24, 192.168.1.0/24, 192.168.2.0/24, 192.168.3.0/24 -> [IPv4Network('192.168.0.0/22')]
+Mit 192.168.5.0/24 dazu: [IPv4Network('192.168.0.0/22'), IPv4Network('192.168.5.0/24')] (Lücke bei .4, daher keine einzelne Summe)
+
+## 6. Fehlerbilder real: Namensräume mit Router; Host A liegt in 192.168.1.0/24, Host B in 192.168.2.0/24
+--- 6a. richtig konfiguriert (Vergleich)
+$ ip netns exec cc5a ping -c1 -W1 192.168.2.10 | grep -E 'transmitted'
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+--- 6b. falsches Gateway (192.168.1.254 gibt es nicht)
+$ ip netns exec cc5a ping -c1 -W1 192.168.2.10 2>&1 | grep -E 'Unreachable|transmitted'
+1 packets transmitted, 0 received, 100% packet loss, time 0ms
+$ ip netns exec cc5a ip neigh show 192.168.1.254 | awk '{print $1, $NF}'
+192.168.1.254 INCOMPLETE
+Der Host fragt per ARP nach 192.168.1.254 und bekommt keine Antwort (INCOMPLETE); die Route zeigt auf ein Gateway, das nicht existiert.
+--- 6c. Maske /30 am Host: das Gateway liegt außerhalb des eigenen Netzes
+$ ip netns exec cc5a ip route add default via 192.168.1.1 2>&1
+Error: Nexthop has invalid gateway.
+--- 6d. Maske /16 am Host: der Host hält 192.168.2.10 für direkt erreichbar und fragt per ARP statt über den Router
+$ ip netns exec cc5a ping -c1 -W1 192.168.2.10 2>&1 | grep -E 'Unreachable|transmitted'
+1 packets transmitted, 0 received, 100% packet loss, time 0ms
+$ ip netns exec cc5a ip neigh show 192.168.2.10 | awk '{print $1, $NF}'
+192.168.2.10 INCOMPLETE
+--- 6e. doppelte Adresse: zwei Geräte mit 192.168.1.50 im selben Netz, Mitschnitt zeigt zwei Antworten mit verschiedenen MACs
+$ ip netns exec cc5e ping -c1 -W1 192.168.1.50 | grep -E 'transmitted'
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+$ tshark -r dup.pcap -Y 'arp.opcode==2' -T fields -e arp.src.proto_ipv4 -e arp.src.hw_mac 2>/dev/null | sort -u
+192.168.1.50	02:00:00:00:05:0c
+192.168.1.50	02:00:00:00:05:0d
+Zwei Antworten für dieselbe IP-Adresse mit verschiedenen MAC-Adressen: typisches Zeichen einer doppelten Adresse; der ARP-Cache des Fragenden wechselt zwischen beiden.

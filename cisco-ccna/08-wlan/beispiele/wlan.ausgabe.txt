@@ -1,0 +1,70 @@
+
+## 1. Kanalplanung 2,4 GHz: Mittenfrequenzen und Überlappung (Modell: Kanalbreite 22 MHz wie bei 802.11b/DSSS)
+Kanal  Mittenfrequenz
+    1  2412 MHz
+    6  2437 MHz
+   11  2462 MHz
+   13  2472 MHz
+Kanal  1 und  6: Abstand 25 MHz -> überlappungsfrei
+Kanal  1 und  5: Abstand 20 MHz -> überlappen
+Kanal  6 und 11: Abstand 25 MHz -> überlappungsfrei
+Kanal  1 und 11: Abstand 50 MHz -> überlappungsfrei
+Kanal  3 und  8: Abstand 25 MHz -> überlappungsfrei
+Kanal  4 und  8: Abstand 20 MHz -> überlappen
+Überlappungsfreie Dreiergruppen mit den Kanälen 1 bis 11: [(1, 6, 11)]
+Mit den Kanälen 1 bis 13 (Europa) gibt es mehr Gruppen: 10 - die übliche Wahl bleibt 1, 6, 11.
+
+## 2. Dämpfung im freien Raum (FSPL), Sendeleistung, Empfangspegel, SNR (Modell)
+Umrechnung: 20 dBm = 100 mW, 17 dBm = 50 mW, 0 dBm = 1 mW, -70 dBm = 1.00e-07 mW
+Verdopplung der Leistung = +3 dB, Zehnfache = +10 dB: 3.01 dB und 10.0 dB
+EIRP des AP: 17 dBm Sender + 3 dBi Antenne - 1 dB Kabel = 19 dBm (79 mW)
+Entfernung  FSPL 2,4 GHz  FSPL 5 GHz  RSSI 2,4 GHz  RSSI 5 GHz  (Client-Antenne 0 dBi, freier Raum)
+      5 m       54.2 dB      60.7 dB      -35.2 dBm     -41.7 dBm
+     10 m       60.2 dB      66.7 dB      -41.2 dBm     -47.7 dBm
+     20 m       66.2 dB      72.7 dB      -47.2 dBm     -53.7 dBm
+     40 m       72.2 dB      78.8 dB      -53.2 dBm     -59.8 dBm
+     80 m       78.2 dB      84.8 dB      -59.2 dBm     -65.8 dBm
+SNR bei -67 dBm und Rauschboden -95 dBm: 28 dB
+5 GHz dämpft bei gleicher Entfernung um 6.5 dB mehr als 2,4 GHz (Wände zusätzlich, hier nicht modelliert).
+
+## 3. WPA2-Personal: aus Passphrase und SSID wird der 256-Bit-Schlüssel (PBKDF2-HMAC-SHA1, 4096 Runden)
+Testvektor aus dem Standard (Passphrase "password", SSID "IEEE"): stimmt überein
+Lab-Gast    ed082e30516f52d2f9736b5a42d3ceef...
+Lab-Intern  b7b1f73e7aaa5aed47fcd067fa373df0...
+Gleiche Passphrase, andere SSID -> anderer Schlüssel: die SSID dient als Salt. Kurze oder bekannte Passphrasen lassen sich offline erraten, sobald der Handshake mitgeschnitten wurde.
+Länge der Passphrase im Standard: 8 bis 63 Zeichen; WPA3-Personal ersetzt das Verfahren durch SAE (hier nicht ausgeführt).
+
+## 4. SSID, VLAN und Subnetz: Plan prüfen (Modell einer Controller-Konfiguration)
+Lab-Intern  VLAN 10    wpa2-enterprise  ok
+Lab-Gast    VLAN 30    offen            Sicherheit: keine Verschlüsselung; VLAN 30 wird von mehreren SSIDs benutzt
+Lab-IoT     VLAN 30    wep              Sicherheit: WEP gilt als gebrochen; VLAN 30 wird von mehreren SSIDs benutzt
+Lab-Test    VLAN 5000  wpa3-personal    VLAN-ID außerhalb 1 bis 4094
+Subnetze überlappen: Lab-Gast 192.168.30.0/24 und Lab-Test 192.168.30.0/25
+
+## 5. PoE-Budget eines Access-Switches (Standard-Leistungsklassen nach Lehrbuchwissen)
+Switch-Budget 370 W; Verbrauch (Annahmen, Herstellerangaben prüfen):
+  AP Typ A (af-fähig)    10 x 12.95 W =  129.5 W
+  AP Typ B (at nötig)     8 x 25.50 W =  204.0 W
+  Kamera (af)             6 x 12.95 W =   77.7 W
+  Summe 411.2 W -> ÜBERSCHRITTEN (Reserve -41.2 W)
+  Port-Maximum 802.3af        15.4 W
+  Port-Maximum 802.3at        30.0 W
+  Port-Maximum 802.3bt Typ 3  60.0 W
+  Port-Maximum 802.3bt Typ 4  90.0 W
+
+## 6. Fehlerbild einordnen: Pegel, Rauschen, Authentifizierung (Faustregeln, keine Herstellerwerte)
+RSSI  -45 dBm, Rauschen  -95 dBm -> SNR 50 dB (ausreichend): gutes Signal
+RSSI  -72 dBm, Rauschen  -95 dBm -> SNR 23 dB (grenzwertig): schwaches Signal, aber sauber
+RSSI  -62 dBm, Rauschen  -70 dBm -> SNR  8 dB (kritisch): gutes Signal bei hohem Rauschboden
+RSSI  -85 dBm, Rauschen  -90 dBm -> SNR  5 dB (kritisch): sehr schwach und verrauscht
+Authentifizierungsfehler erzeugen kein Pegelproblem: Prüfreihenfolge Verbindung -> Pegel/SNR -> Kanal/Störer -> Authentifizierung -> DHCP/DNS.
+
+## 7. Clientseitige Fehlersuche: gleiche Fragen, andere Befehle (Windows und macOS als Lehrbuchwissen, nicht ausgeführt)
+Frage                    Linux (Module 5 und 6 ausgeführt)  Windows (nicht ausgeführt) macOS (nicht ausgeführt)
+IP-Konfiguration         ip addr                            ipconfig /all              ifconfig oder networksetup -getinfo "Wi-Fi"
+Standardgateway/Routen   ip route                           route print                netstat -rn
+Erreichbarkeit           ping                               ping                       ping
+Weg zum Ziel             traceroute                         tracert                    traceroute
+Namensauflösung          dig, getent hosts                  nslookup                   dig oder scutil --dns
+Nachbarn (ARP)           ip neigh                           arp -a                     arp -a
+Reihenfolge bei WLAN-Clients: 1. Funkverbindung und SSID, 2. Sicherheitsparameter (WPA-Variante, Passphrase), 3. DHCP-Adresse, 4. Gateway, 5. DNS, 6. Ziel.

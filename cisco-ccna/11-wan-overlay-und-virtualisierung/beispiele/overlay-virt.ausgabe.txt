@@ -1,0 +1,59 @@
+
+## 1. Overlay über Underlay: VXLAN (VNI 100) zwischen zwei Standorten, Transport über ein 10.100.0.0/30-Netz
+$ ip -n ccu1 link show vx100 | grep -oE ' mtu [0-9]+' | sed 's/^ /Overlay-Schnittstelle vx100: /'
+Overlay-Schnittstelle vx100: mtu 1450
+$ ip -n ccu1 -d link show vx100 2>/dev/null | grep -oE 'vxlan id [0-9]+|dstport [0-9]+' | paste -sd' '
+vxlan id 100 dstport 4789
+$ ip -n ccu1 link show u1 | grep -oE 'mtu [0-9]+' | sed 's/^/Underlay-Schnittstelle u1: /'
+Underlay-Schnittstelle u1: mtu 1500
+$ ip netns exec ccu1 ping -c2 -W1 172.16.100.2 | grep transmitted | sed 's/, time.*//'
+2 packets transmitted, 2 received, 0% packet loss
+$ tshark -r vx.pcap -Y 'icmp' -T fields -e ip.src -e ip.dst -e udp.dstport -e vxlan.vni -e icmp.type -e frame.len 2>/dev/null | head -2 | awk -F'\t' '{split($1,a,","); split($2,b,","); print "außen (Underlay): " a[1] " -> " b[1] ", UDP-Port " $3 ", VNI " $4 "  | innen (Overlay): " a[2] " -> " b[2] ", ICMP-Typ " $5 ", Rahmenlänge außen " $6 " Byte (ohne FCS)"}'
+außen (Underlay): 10.100.0.1 -> 10.100.0.2, UDP-Port 4789, VNI 100  | innen (Overlay): 172.16.100.1 -> 172.16.100.2, ICMP-Typ 8, Rahmenlänge außen 148 Byte (ohne FCS)
+außen (Underlay): 10.100.0.2 -> 10.100.0.1, UDP-Port 4789, VNI 100  | innen (Overlay): 172.16.100.2 -> 172.16.100.1, ICMP-Typ 0, Rahmenlänge außen 148 Byte (ohne FCS)
+--- MTU-Folgen: 50 Byte Mehraufwand (Ethernet 14 + IP 20 + UDP 8 + VXLAN 8)
+$ ip netns exec ccu1 ping -c1 -W1 -M do -s 1422 172.16.100.2 | grep -E 'transmitted|too long|Frag' | sed 's/, time.*//'
+1 packets transmitted, 1 received, 0% packet loss
+$ ip netns exec ccu1 ping -c1 -W1 -M do -s 1472 172.16.100.2 2>&1 | grep -E 'transmitted|too long|Frag' | sed 's/, time.*//' | head -2
+ping: local error: message too long, mtu=1450
+1 packets transmitted, 0 received, +1 errors, 100% packet loss
+--- Underlay gestört: Verbindung u1 unterbrochen, Overlay fällt mit aus; die Ursache liegt im Underlay
+$ ip netns exec ccu1 ping -c1 -W1 172.16.100.2 2>&1 | grep -E 'transmitted|unreachable|Unreachable' | sed 's/, time.*//' | head -2
+1 packets transmitted, 0 received, 100% packet loss
+
+## 2. Nicht ausführbar im Container: IPsec (ESP) und GRE
+$ ip netns exec ccu1 ip xfrm state add src 10.100.0.1 dst 10.100.0.2 proto esp spi 0x1000 reqid 1 mode transport enc 'cbc(aes)' 0x00112233445566778899aabbccddeeff auth 'hmac(sha256)' 0x00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
+Error: Requested type not found.
+$ ip netns exec ccu1 ip link add g0 type gre local 10.100.0.1 remote 10.100.0.2
+Error: Unknown device type.
+Lehrbuchwissen (auf Geräten nicht bestätigt): IPsec nutzt ESP (IP-Protokoll 50) oder AH (51); IKE verhandelt über UDP 500, bei NAT-Traversal über UDP 4500; GRE ist IP-Protokoll 47.
+Site-to-Site-VPN: zwei Gateways verbinden zwei Netze dauerhaft; Remote-Access-VPN: ein Client verbindet sich einzeln. Der Tunnel kapselt, die Verschlüsselung (IPsec) schützt Vertraulichkeit und Integrität.
+
+## 3. Virtualisierung und Container: Namensräume als technische Grundlage (Linux)
+$ echo -n 'Prozesse im Hauptnamensraum: '; ps -e --no-headers | wc -l
+Prozesse im Hauptnamensraum: 76
+$ echo -n 'Prozesse im neuen PID-Namensraum: '; unshare --pid --fork --mount-proc ps -e --no-headers | wc -l
+Prozesse im neuen PID-Namensraum: 1
+$ unshare --uts sh -c 'hostname lab-container; echo Hostname im Namensraum: $(hostname)'; echo Hostname außen bleibt: $(hostname)
+Hostname im Namensraum: lab-container
+Hostname außen bleibt: vm
+$ unshare -n sh -c 'ip -br link | awk "{print \$1, \$2}"'
+lo DOWN
+Die letzte Zeile zeigt: ein neuer Netzwerk-Namensraum enthält nur lo und keine der Schnittstellen des Hosts. Container teilen den Kernel des Hosts; eine VM bringt ihren eigenen Kernel mit und läuft auf einem Hypervisor.
+vorhanden (nicht gestartet): /usr/bin/podman
+vorhanden (nicht gestartet): /usr/bin/docker
+vorhanden (nicht gestartet): /usr/bin/qemu-img
+
+## 4. WAN-Topologien im Vergleich (networkx): Verbindungen, Ausfall eines Standorts, Ausfall einer Leitung
+Hub-and-Spoke (Knoten 0 = Zentrale)         5 Leitungen; Ausfall dieser Standorte trennt das Netz: [0]       ; kritische Leitungen: 5
+Teilvermascht (Ring plus Querverbindung)    7 Leitungen; Ausfall dieser Standorte trennt das Netz: keiner    ; kritische Leitungen: 0
+Vollvermascht                              15 Leitungen; Ausfall dieser Standorte trennt das Netz: keiner    ; kritische Leitungen: 0
+Faustformel: Vollvermaschung braucht n*(n-1)/2 Leitungen, bei n = 12 Standorten sind das 66 gegen 11 bei Hub-and-Spoke.
+
+## 5. Cloud-Adressplanung: VPC-Netz mit Subnetzen je Zone und Überschneidung mit dem Standortnetz prüfen
+öffentlich  Zone A  10.20.0.0/24
+privat      Zone A  10.20.10.0/24
+öffentlich  Zone B  10.20.1.0/24
+privat      Zone B  10.20.11.0/24
+Überschneidung mit dem Standortnetz 10.20.5.0/24 : keine geplanten Subnetze betroffen | das VPC-Netz als Ganzes überlappt: True
+Folge: Ein Site-to-Site-VPN zwischen überlappenden Netzen braucht NAT oder eine Neuplanung der Adressen.

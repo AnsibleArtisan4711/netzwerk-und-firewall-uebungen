@@ -1,0 +1,80 @@
+
+## 1. SNMPv2c: Geräteangaben lesen (numerische OIDs, keine MIB-Dateien installiert)
+$ ip netns exec ccmon snmpget -v2c -c labro -On -Oqv -t1 -r1 127.0.0.1:1161 1.3.6.1.2.1.1.5.0 | sed 's/^/sysName (1.3.6.1.2.1.1.5.0): /'
+sysName (1.3.6.1.2.1.1.5.0): "sw-lab-01"
+$ ip netns exec ccmon snmpget -v2c -c labro -On -Oqv -t1 -r1 127.0.0.1:1161 1.3.6.1.2.1.1.6.0 | sed 's/^/sysLocation (1.3.6.1.2.1.1.6.0): /'
+sysLocation (1.3.6.1.2.1.1.6.0): "Labor Raum 1"
+$ ip netns exec ccmon snmpget -v2c -c labro -On -Oqv -t1 -r1 127.0.0.1:1161 1.3.6.1.2.1.1.4.0 | sed 's/^/sysContact (1.3.6.1.2.1.1.4.0): /'
+sysContact (1.3.6.1.2.1.1.4.0): "admin@lab.example"
+$ ip netns exec ccmon snmpget -v2c -c labro -On -Oqv -t1 -r1 127.0.0.1:1161 1.3.6.1.2.1.1.1.0 | cut -c1-60 | sed 's/^/sysDescr (1.3.6.1.2.1.1.1.0): /'
+sysDescr (1.3.6.1.2.1.1.1.0): "Linux vm 6.18.44-fc-v880 #1 SMP PREEMPT_DYNAMIC @0 x86_64"
+$ ip netns exec ccmon snmpwalk -v2c -c labro -On -Oqv -t1 -r1 127.0.0.1:1161 1.3.6.1.2.1.2.2.1.2 | tr '\n' ' '; echo
+"lo" "m0" 
+--- falsche Community: keine Antwort (Zeitüberschreitung)
+$ ip netns exec ccmon snmpget -v2c -c falsch -t1 -r0 127.0.0.1:1161 1.3.6.1.2.1.1.5.0 2>&1 | head -1
+Timeout: No Response from 127.0.0.1:1161.
+
+## 2. SNMPv3 mit Authentifizierung und Verschlüsselung (authPriv: SHA und AES)
+$ ip netns exec ccmon snmpget -v3 -l authPriv -u labv3 -a SHA -A authpass123 -x AES -X privpass123 -On -Oqv -t1 -r0 127.0.0.1:1161 1.3.6.1.2.1.1.5.0
+"sw-lab-01"
+$ ip netns exec ccmon snmpget -v3 -l authPriv -u labv3 -a SHA -A falsches-pw -x AES -X privpass123 -t1 -r0 127.0.0.1:1161 1.3.6.1.2.1.1.5.0 2>&1 | head -1
+snmpget: Authentication failure (incorrect password, community or key)
+$ ip netns exec ccmon snmpget -v3 -l noAuthNoPriv -u labv3 -t1 -r0 127.0.0.1:1161 1.3.6.1.2.1.1.5.0 2>&1 | head -1
+Error in packet
+
+## 3. Polling und Auslastung: Zähler zweimal lesen (Verkehr von ccpeer über m1 nach m0 erzeugen)
+Schnittstelle m0 hat den Index 848 (aus ifDescr)
+ifInOctets: 502270092 -> 1398069156 in 3.0 s = 2370.5 Mbit/s; ifHighSpeed meldet 10000 Mbit/s -> Auslastung 23.705 %
+Zählerüberlauf: ein 32-Bit-Zähler (ifInOctets) läuft bei 4294967296 über; bei 1 Gbit/s nach rund 34 Sekunden. Daher bei schnellen Schnittstellen 64-Bit-Zähler (ifHCInOctets) verwenden.
+
+## 4. SNMP-Trap an einen Empfänger (snmptrapd) – wichtiges Ereignis ohne Abfrage
+$ grep -c 'iso.3.6.1.6.3.1.1.5.3' /tmp/ccna/snmp/trap.log | sed 's/^/Einträge zum linkDown-Trap (iso.3.6.1.6.3.1.1.5.3) im Trap-Protokoll: /'
+Einträge zum linkDown-Trap (iso.3.6.1.6.3.1.1.5.3) im Trap-Protokoll: 1
+$ tr '\t' '\n' < /tmp/ccna/snmp/trap.log | grep -E 'snmpTrapOID|1.1.4.1.0|2.2.1.1.2' | sed 's/^/  /'
+  iso.3.6.1.6.3.1.1.4.1.0 = OID: iso.3.6.1.6.3.1.1.5.3
+  iso.3.6.1.2.1.2.2.1.1.2 = INTEGER: 2
+
+## 5. Syslog: Schweregrade (0 bis 7) und zentrale Sammlung mit rsyslog
+$ echo 'alle.log:'; sed 's/^/  /' /tmp/ccna/alle.log
+alle.log:
+  local7.err sw-lab-01 %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down
+  local7.notice sw-lab-01 %SYS-5-CONFIG_I: Configured from console by admin
+  local7.warning sw-lab-01 %SPANTREE-4-BLOCK_BPDUGUARD: Received BPDU on port Fa0/5 with BPDU Guard enabled
+  local7.info sw-lab-01 %LINEPROTO-6-UPDOWN: Line protocol on Interface Vlan10, changed state to up
+  local7.debug sw-lab-01 debug: ARP packet received
+  local7.crit sw-lab-01 %SYS-2-MALLOCFAIL: Memory allocation failed
+$ echo 'warn.log (Schweregrad 4 und niedriger = Warning bis Emergency):'; sed 's/^/  /' /tmp/ccna/warn.log
+warn.log (Schweregrad 4 und niedriger = Warning bis Emergency):
+  local7.err sw-lab-01 %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down
+  local7.warning sw-lab-01 %SPANTREE-4-BLOCK_BPDUGUARD: Received BPDU on port Fa0/5 with BPDU Guard enabled
+  local7.crit sw-lab-01 %SYS-2-MALLOCFAIL: Memory allocation failed
+Meldungsformat der Cisco-Texte (Lehrbuchwissen): %FACILITY-SEVERITY-MNEMONIC: Text. Die Nachrichten oben sind von mir gebildet, nicht von einem Gerät erzeugt.
+Schweregrade: 0 emergencies, 1 alerts, 2 critical, 3 errors, 4 warnings, 5 notifications, 6 informational, 7 debugging
+Ein Schwellwert "logging trap warnings" bedeutet: Schweregrad 0 bis 4 werden gesendet (Lehrbuchwissen, nicht auf IOS ausgeführt).
+
+## 6. Konfigurationssicherung und Änderungsvergleich (diff, Prüfsumme)
+$ sha256sum cfg/sw-lab-01.v1 cfg/sw-lab-01.v2 | cut -c1-16,65-
+e316808ebed48022  cfg/sw-lab-01.v1
+8f30ce05e9a04230  cfg/sw-lab-01.v2
+$ diff -u cfg/sw-lab-01.v1 cfg/sw-lab-01.v2 | tail -n +3
+@@ -3,5 +3,5 @@
+  description Uplink
+  switchport mode trunk
+ interface GigabitEthernet0/2
+- switchport access vlan 10
+-ntp server 203.0.113.80
++ switchport access vlan 20
++ntp server 203.0.113.81
+Sicherung ohne Zugangsdaten: Konfigurationen können Kennwörter oder Community-Strings enthalten und gehören in ein zugriffsgeschütztes Archiv.
+
+## 7. Sichere Dateiübertragung der Sicherung per SFTP und SCP (OpenSSH, Linux); unverschlüsselte Verfahren wie TFTP und FTP kommen nicht zum Einsatz
+$ ip netns exec ccmon scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o LogLevel=ERROR -i /tmp/ccna/ssh/admin -P 2223 cfg/sw-lab-01.v2 root@127.0.0.1:/tmp/ccna/sicherung/sw-lab-01.cfg && echo SCP-Upload-OK
+SCP-Upload-OK
+$ echo 'get /tmp/ccna/sicherung/sw-lab-01.cfg /tmp/ccna/zurueck.cfg' | ip netns exec ccmon sftp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o LogLevel=ERROR -i /tmp/ccna/ssh/admin -P 2223 -b - root@127.0.0.1 2>&1 | tail -1 | sed -E 's/^sftp> //'
+get /tmp/ccna/sicherung/sw-lab-01.cfg /tmp/ccna/zurueck.cfg
+$ sha256sum cfg/sw-lab-01.v2 zurueck.cfg | awk '{print substr($1,1,16), $2}'
+8f30ce05e9a04230 cfg/sw-lab-01.v2
+8f30ce05e9a04230 zurueck.cfg
+$ ip netns exec ccmon ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o LogLevel=ERROR -i /tmp/ccna/ssh/admin -p 2223 root@127.0.0.1 'ls -l /tmp/ccna/sicherung | tail -1 | awk "{print \$5, \$9}"'
+171 sw-lab-01.cfg
+Auf einem Cisco-Gerät übernimmt die SCP-Funktion der Gerätesoftware diese Rolle (ip scp server enable, copy scp:); die IOS-Befehle sind hier nicht ausgeführt und nicht bestätigt.

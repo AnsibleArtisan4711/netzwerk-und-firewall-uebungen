@@ -1,0 +1,88 @@
+
+## 1. SSH-Härtung: Schlüssel erzeugen, Server prüfen (sshd -T), Anmeldung mit Schlüssel, Passwort abgelehnt
+$ /usr/sbin/sshd -t -f /tmp/ccna/ssh/sshd.conf && echo Syntax-OK
+Syntax-OK
+$ /usr/sbin/sshd -T -f /tmp/ccna/ssh/sshd.conf 2>/dev/null | grep -E '^(port|permitrootlogin|passwordauthentication|pubkeyauthentication|maxauthtries|logingracetime|clientaliveinterval|clientalivecountmax) '
+port 2222
+logingracetime 20
+maxauthtries 2
+clientaliveinterval 60
+clientalivecountmax 3
+permitrootlogin without-password
+pubkeyauthentication yes
+passwordauthentication no
+$ ip netns exec ccssh ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -i /tmp/ccna/ssh/admin -p 2222 root@127.0.0.1 'echo Anmeldung mit Schlüssel erfolgreich; id -un' 2>&1 | grep -v Warning
+Anmeldung mit Schlüssel erfolgreich
+root
+$ ip netns exec ccssh ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=password -o PubkeyAuthentication=no -o BatchMode=yes -p 2222 root@127.0.0.1 true 2>&1 | grep -v Warning
+root@127.0.0.1: Permission denied (publickey).
+$ grep -E 'Accepted publickey|Connection closed|no authentication|Failed' /tmp/ccna/ssh/sshd.log | sed -E 's/^.*sshd(\[[0-9]+\])?: //; s/ port [0-9]+//; s/SHA256:[A-Za-z0-9+\/]+/SHA256:.../' | sort -u | head -4
+Accepted publickey for root from 127.0.0.1 ssh2: ED25519 SHA256:...
+Connection closed by authenticating user root 127.0.0.1 [preauth]
+
+## 2. ACL-Auswertung als Python-Modell: Reihenfolge, Wildcard-Maske, implizites Deny am Ende
+ACL: 10 deny tcp host 192.168.10.50 -> 192.168.20.0/24 eq 80 | 20 permit tcp 192.168.10.0/24 -> 192.168.20.0/24 eq 80 | 30 permit icmp 192.168.10.0/24 -> any
+192.168.10.50  -> 192.168.20.10  tcp  80    : deny   (Zeile 10)
+192.168.10.51  -> 192.168.20.10  tcp  80    : permit (Zeile 20)
+192.168.10.51  -> 192.168.20.10  tcp  22    : deny   (implizites Deny)
+192.168.30.5   -> 192.168.20.10  tcp  80    : deny   (implizites Deny)
+192.168.10.51  -> 192.168.20.10  icmp -     : permit (Zeile 30)
+Reihenfolge vertauscht (permit vor deny): 192.168.10.50 -> Port 80 : permit (Zeile 10, jetzt als erste Zeile) – die Reihenfolge entscheidet.
+Wildcard 0.0.0.255    mit 192.168.10.0 entspricht 192.168.10.0/24
+Wildcard 0.0.3.255    mit 10.1.4.0     entspricht 10.1.4.0/22
+Wildcard 0.15.255.255 mit 172.16.0.0   entspricht 172.16.0.0/12
+Wildcard 0.0.0.31     mit 192.168.1.64 entspricht 192.168.1.64/27
+Merkregel (Lehrbuchwissen): Standard-ACLs prüfen nur die Quelladresse und stehen nahe am Ziel; erweiterte ACLs prüfen Quelle, Ziel und Port und stehen nahe an der Quelle.
+
+## 3. Paketfilter als Gegenstück (nftables, echter Lauf): Reihenfolge der Regeln, Standard-Verwerfen, Zähler
+$ ip netns exec ccacl1 curl -s -o /dev/null -w 'HTTP %{http_code}\n' --max-time 2 http://192.168.20.10/
+HTTP 200
+$ ip netns exec ccacl2 curl -s -o /dev/null -w 'HTTP %{http_code}\n' --max-time 2 http://192.168.20.10/ ; echo curl-Rückgabewert $?
+HTTP 000
+curl-Rückgabewert 28
+$ ip netns exec ccacl1 ping -c1 -W1 192.168.20.10 | grep transmitted | sed 's/, time.*//'
+1 packets transmitted, 1 received, 0% packet loss
+$ ip netns exec ccacl1 curl -s -o /dev/null -w 'HTTP %{http_code}\n' --max-time 2 http://192.168.20.10:22/ ; echo curl-Rückgabewert $?
+HTTP 000
+curl-Rückgabewert 28
+$ ip netns exec ccrt nft list chain inet filter forward | grep -E 'counter' | sed -E 's/^[ \t]+//; s/ bytes [0-9]+//'
+ip saddr 192.168.10.50 tcp dport 80 counter packets 2 drop comment "Zeile 10"
+ip saddr 192.168.10.0/24 ip daddr 192.168.20.0/24 tcp dport 80 counter packets 1 accept comment "Zeile 20"
+ip saddr 192.168.10.0/24 icmp type echo-request counter packets 1 accept comment "Zeile 30"
+
+## 4. Port-Security als Python-Modell: maximale Adressen, Sticky, Violation-Modi
+--- Modus protect, Maximum 1
+   Rahmen von aa:aa:aa:00:00:01: weitergeleitet (MAC gelernt, sticky)
+   Rahmen von aa:aa:aa:00:00:02: verworfen (still)
+   Rahmen von aa:aa:aa:00:00:01: weitergeleitet
+--- Modus restrict, Maximum 1
+   Rahmen von aa:aa:aa:00:00:01: weitergeleitet (MAC gelernt, sticky)
+   Rahmen von aa:aa:aa:00:00:02: verworfen, Meldung und Zähler 1
+   Rahmen von aa:aa:aa:00:00:01: weitergeleitet
+--- Modus shutdown, Maximum 1
+   Rahmen von aa:aa:aa:00:00:01: weitergeleitet (MAC gelernt, sticky)
+   Rahmen von aa:aa:aa:00:00:02: Verstoß: Port wird abgeschaltet (err-disabled)
+   Rahmen von aa:aa:aa:00:00:01: Port err-disabled: Rahmen verworfen
+Grenze der Methode: MAC-Adressen lassen sich fälschen; Port-Security ersetzt keine 802.1X-Anmeldung.
+
+## 5. DHCP Snooping und Dynamic ARP Inspection als Python-Modell
+Angreifer auf Fa0/5 sendet DHCP-Offer: verworfen: Serverantwort auf nicht vertrauenswürdigem Port Fa0/5
+Echter Server an Gi0/24 sendet ACK:    weitergeleitet (Binding 192.168.10.20 -> aa:aa:aa:00:00:10 auf Gi0/24)
+Client Fa0/2 sendet ARP mit eigener Adresse:        weitergeleitet
+Angreifer Fa0/5 gibt sich als 192.168.10.1 aus:    verworfen: ARP-Absender passt nicht zum DHCP-Binding
+Statisch konfigurierte Hosts ohne DHCP haben kein Binding und würden von DAI verworfen, wenn kein ARP-ACL-Eintrag besteht.
+
+## 5b. Storm Control als Python-Modell: Schwellwert für Broadcast je Sekunde (RA Guard ist IPv6 und hier nicht ausgeführt)
+Annahme: 100-Mbit/s-Port mit rund 148810 kleinen Paketen je Sekunde als volle Kapazität, Schwelle 10 %
+     500 pps: Broadcast 0.3 % der Leitungskapazität: unter der Schwelle, alles wird weitergeleitet
+    8000 pps: Broadcast 5.4 % der Leitungskapazität: unter der Schwelle, alles wird weitergeleitet
+   90000 pps: Broadcast 60.5 % der Leitungskapazität: über der Schwelle (10 %), Aktion drop
+Hinweis: Storm Control begrenzt Broadcast, Multicast oder unbekanntes Unicast je Port; es ersetzt keine Schleifenvermeidung durch Spanning Tree (Modul 4). RA Guard (v2.0 4.7.d) filtert unerwünschte IPv6-Router-Advertisements an Zugangsports und ist im Container nicht ausführbar.
+
+## 6. AAA: Protokollvergleich (Lehrbuchwissen) und Kennwortspeicherung
+Merkmal            RADIUS                                        TACACS+
+Transport          UDP (1812/1813, früher 1645/1646)             TCP 49
+AAA-Trennung       Authentifizierung und Autorisierung gemeinsam getrennt
+Verschlüsselung    nur das Kennwort im Paket                     der gesamte Paketinhalt
+typischer Einsatz  Netzzugang (802.1X, VPN, WLAN)                Geräteadministration
+Kennwortspeicherung auf Cisco-Geräten (Lehrbuchwissen, auf IOS nicht bestätigt): Typ 0 Klartext, Typ 7 umkehrbare Verschleierung, Typ 5 MD5-Hash, Typ 8 PBKDF2-SHA-256, Typ 9 scrypt.

@@ -1,0 +1,113 @@
+
+## 1. Datenmodell (YAML) und Vorlage (Jinja2): Konfigurationstexte für drei Switches erzeugen
+$ python3 render.py
+geschrieben: out/sw-eg-01.cfg (26 Zeilen)
+geschrieben: out/sw-og-01.cfg (22 Zeilen)
+geschrieben: out/sw-og-02.cfg (18 Zeilen)
+$ cat out/sw-og-02.cfg
+hostname sw-og-02
+vlan 10
+ name Verwaltung
+vlan 20
+ name Technik
+vlan 30
+ name Gaeste
+interface Gi0/24
+ description Uplink
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20,30
+interface Fa0/1
+ description Zugang VLAN 30
+ switchport mode access
+ switchport access vlan 30
+interface Vlan99
+ ip address 192.168.99.13 255.255.255.0
+ntp server 203.0.113.80
+--- Fehlerprüfung: ein Port verweist auf ein nicht definiertes VLAN
+$ sed 's/geraete.yaml/geraete_fehler.yaml/' render.py | python3 -
+sw-og-02 Fa0/1: VLAN 40 ist nicht definiert
+
+## 2. Abweichung vom Sollstand (Drift): Soll-Konfiguration gegen eine abgeänderte Ist-Konfiguration
+Zeilen laut Soll, die im Ist fehlen: 2
+  -  switchport access vlan 20
+  - ntp server 203.0.113.80
+Zeilen im Ist, die nicht im Soll stehen: 3
+  +  switchport access vlan 30
+  + ntp server 198.51.100.5
+  + snmp-server community public RO
+Hinweis: "snmp-server community public RO" ist eine unsichere Standardgemeinschaft; solche Zusatzzeilen sind ein Compliance-Befund.
+Ähnlichkeit Soll/Ist: 0.91
+
+## 3. Datenformate: dieselben Daten als YAML, JSON und XML
+JSON: {"name": "sw-eg-01", "mgmt": "192.168.99.11/24", "vlans": [10, 20]}
+XML:  <switch name="sw-eg-01"><mgmt>192.168.99.11/24</mgmt><vlan>10</vlan><vlan>20</vlan></switch>
+Zurück aus JSON: True - Schlüssel/Wert-Paare in {} (Objekt) und Listen in [] sind die Bausteine von JSON.
+
+## 4. REST gegen einen Mock-Controller (Flask, lokal, kein Cisco-Produkt): Verben, Statuscodes, Token
+$ ip netns exec ccrest curl -s -o /dev/null -w 'ohne Token: HTTP %{http_code}\n' http://127.0.0.1:8081/api/v1/devices
+ohne Token: HTTP 401
+$ ip netns exec ccrest curl -s -H X-Token:lab-token -w ' [HTTP %{http_code}]\n' http://127.0.0.1:8081/api/v1/devices
+[{"id":1,"name":"sw-eg-01","status":"up"}]
+ [HTTP 200]
+$ ip netns exec ccrest curl -s -H X-Token:lab-token -w ' [HTTP %{http_code}]\n' -X POST -H 'Content-Type: application/json' -d '{"name":"sw-og-01","status":"up"}' http://127.0.0.1:8081/api/v1/devices
+{"id":2,"name":"sw-og-01","status":"up"}
+ [HTTP 201]
+$ ip netns exec ccrest curl -s -H X-Token:lab-token -w ' [HTTP %{http_code}]\n' -X PATCH -H 'Content-Type: application/json' -d '{"status":"down"}' http://127.0.0.1:8081/api/v1/devices/2
+{"id":2,"name":"sw-og-01","status":"down"}
+ [HTTP 200]
+$ ip netns exec ccrest curl -s -H X-Token:lab-token http://127.0.0.1:8081/api/v1/devices | jq -c '.[] | {name, status}'
+{"name":"sw-eg-01","status":"up"}
+{"name":"sw-og-01","status":"down"}
+$ ip netns exec ccrest curl -s -H X-Token:lab-token -w ' [HTTP %{http_code}]\n' -X DELETE http://127.0.0.1:8081/api/v1/devices/2
+ [HTTP 204]
+$ ip netns exec ccrest curl -s -o /dev/null -H X-Token:lab-token -w 'GET /devices/2 nach DELETE: HTTP %{http_code}\n' http://127.0.0.1:8081/api/v1/devices/2
+GET /devices/2 nach DELETE: HTTP 404
+Zuordnung (Lehrbuchwissen): GET lesen, POST anlegen, PUT ersetzen, PATCH teilweise ändern, DELETE löschen; 2xx Erfolg, 4xx Fehler des Aufrufers (401 nicht angemeldet, 404 nicht gefunden), 5xx Fehler des Servers.
+
+## 5. Ansible im lokalen Modus: Konfigurationsdatei aus Vorlage, Trockenlauf, Wiederholung (Idempotenz)
+$ ansible --version | head -1
+ansible [core 2.22.0]
+$ ansible-playbook -i localhost, site.yml --check --diff 2>&1 | grep -E 'TASK|changed|ok=|^\+hostname' | sed -E 's/\*+$//; s/^(\+hostname.*)$/  \1/' | head -12
+TASK [Prüfen, dass jeder Port ein definiertes VLAN nutzt] 
+TASK [Konfigurationsdatei je Switch aus der Vorlage erzeugen] 
+  +hostname sw-eg-01
+changed: [localhost] => (item=sw-eg-01)
+  +hostname sw-og-01
+changed: [localhost] => (item=sw-og-01)
+  +hostname sw-og-02
+changed: [localhost] => (item=sw-og-02)
+localhost                  : ok=2    changed=1    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+$ ansible-playbook -i localhost, site.yml 2>&1 | grep -E 'PLAY RECAP|localhost' | sed -E 's/ +/ /g' | tail -1
+localhost : ok=2 changed=1 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0 
+$ ansible-playbook -i localhost, site.yml 2>&1 | grep -E 'localhost' | sed -E 's/ +/ /g' | tail -1
+localhost : ok=2 changed=0 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0 
+$ ansible-playbook -i localhost, site.yml 2>&1 | grep -E 'FAILED|Assertion|failed=1' | sed -E 's/ +/ /g; s/\{.*//' | head -3
+[ERROR]: Task failed: Action failed: Assertion failed
+fatal: [localhost]: FAILED! => 
+localhost : ok=0 changed=0 unreachable=0 failed=1 skipped=0 rescued=0 ignored=0 
+Zweiter Lauf: changed=0, weil die Dateien dem Sollstand schon entsprechen (idempotent). Die Playbooks erzeugen hier nur Dateien; ein Gerät wird nicht angesprochen. Der Lauf mit dem nicht definierten VLAN 40 bricht an der Prüfaufgabe ab, bevor eine Datei geschrieben wird.
+
+## 6. KI-Grundlagen als Spielzeug: Anomalieerkennung auf einer Auslastungsreihe (prädiktiv/statistisch) und Prüfung von KI-Ausgaben
+Basislinie aus den ersten 60 Messwerten: Mittelwert 30.1 %, Standardabweichung 3.4
+Messpunkt  90:  95.0 % -> z = 19.0 -> Auffälligkeit melden
+Messpunkt  91:  88.0 % -> z = 16.9 -> Auffälligkeit melden
+Das ist ein einfaches statistisches Verfahren und ein Beispiel für prädiktive/analytische KI im Betrieb: Es lernt aus Daten (hier: Mittelwert und Streuung), erkennt Abweichungen und kann Fehlalarme erzeugen.
+Prüfung des KI-Vorschlags (ki_vorschlag.txt):
+  Befund - Zeile 3: VLAN-ID 5000 außerhalb 1 bis 4094
+  Befund - Zeile 8: Adresse 192.168.10.1 doppelt vergeben (interface Vlan10 und interface Vlan20)
+  Befund - Zeile 10: VLAN 20 wird benutzt, aber nicht angelegt
+Regel: Ausgaben generativer KI sind Entwürfe. Sie werden gelesen, gegen Soll und Dokumentation geprüft und erst im Labor getestet, bevor sie auf ein Gerät gehen; Betriebsdaten und Kennwörter gehören nicht in öffentliche Dienste.
+
+## 7. Agentische KI als Spielzeugmodell: Freigabeliste, Genehmigungsschritt, Protokoll (kein echtes KI-Modell)
+show_vlan        freigegeben=False -> ausgeführt (Simulation)
+set_description  freigegeben=False -> angehalten: wartet auf menschliche Freigabe
+set_description  freigegeben=True  -> ausgeführt (Simulation)
+reload_device    freigegeben=True  -> abgelehnt: Aktion nicht auf der Freigabeliste
+Protokoll (4 Einträge) wird unveränderlich abgelegt, damit Entscheidungen nachvollziehbar bleiben.
+
+## 8. Prompt-Bausteine prüfen (Datenklassifizierung, Ausgabeformat, Rolle, Anweisungen)
+Rolle                vorhanden
+Anweisungen          vorhanden
+Ausgabeformat        vorhanden
+Datenklassifizierung FEHLT: keine Angabe, ob Konfigurationsdaten das Haus verlassen dürfen
+Hinweis: Das prüft nur die Vollständigkeit eines Textes; es ist kein generatives Modell und trifft keine Aussage über die Qualität einer KI-Antwort.

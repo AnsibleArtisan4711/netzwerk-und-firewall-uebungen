@@ -1,0 +1,99 @@
+
+## A1. Statische Routen: Kette R1 - R2 - R3, je ein LAN an R1 (192.168.1.0/24) und R3 (192.168.3.0/24)
+--- ohne Routen: R1 kennt das LAN von R3 nicht
+$ ip netns exec ccr1 ping -c1 -W1 -I 192.168.1.1 192.168.3.1 2>&1 | grep -E 'unreachable|Unreachable|transmitted'
+1 packets transmitted, 0 received, 100% packet loss, time 0ms
+--- nur R1 konfiguriert: R2 kennt das Zielnetz nicht und verwirft das Paket
+$ ip netns exec ccr1 ping -c1 -W1 -I 192.168.1.1 192.168.3.1 2>&1 | grep -E 'unreachable|Unreachable|transmitted'
+1 packets transmitted, 0 received, 100% packet loss, time 0ms
+--- Hinweg bis R3 vorhanden, aber R3 kennt den Rückweg nicht: die Anfrage kommt an, die Antwort geht verloren
+$ ip netns exec ccr1 ping -c1 -W1 -I 192.168.1.1 192.168.3.1 2>&1 | grep -E 'unreachable|Unreachable|transmitted'
+1 packets transmitted, 0 received, 100% packet loss, time 0ms
+--- Hin- und Rückweg konfiguriert
+$ ip netns exec ccr1 ping -c1 -W1 -I 192.168.1.1 192.168.3.1 | grep -E 'transmitted'
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+$ ip netns exec ccr1 traceroute -n -q1 -w1 -s 192.168.1.1 192.168.3.1 | sed 's/ms.*/ms/'
+traceroute to 192.168.3.1 (192.168.3.1), 30 hops max, 60 byte packets
+ 1  10.0.12.2  0.018 ms
+ 2  192.168.3.1  0.007 ms
+$ ip -n ccr1 route | grep -v 'dev lo'
+10.0.12.0/30 dev e12 proto kernel scope link src 10.0.12.1 
+10.0.23.0/30 via 10.0.12.2 dev e12 
+192.168.3.0/24 via 10.0.12.2 dev e12 
+
+## A2. Längster Präfix gewinnt: eine Sperrroute für ein Teilnetz (prohibit) übersteuert die allgemeine Route
+$ ip -n ccr1 route get 192.168.3.5 2>&1 | head -1 | cut -c1-70
+192.168.3.5 via 10.0.12.2 dev e12 src 10.0.12.1 uid 0 
+$ ip -n ccr1 route get 192.168.3.200 2>&1 | head -1
+RTNETLINK answers: Permission denied
+$ ip netns exec ccr1 ping -c1 -W1 -I 192.168.1.1 192.168.3.200 2>&1 | grep -v '^$' | head -3
+PING 192.168.3.200 (192.168.3.200) from 192.168.1.1 : 56(84) bytes of data.
+--- 192.168.3.200 ping statistics ---
+1 packets transmitted, 0 received, 100% packet loss, time 0ms
+Die Sperrroute /25 ist länger (spezifischer) als die Route /24 und gewinnt für 192.168.3.128 bis .255; der Rest von /24 bleibt erreichbar.
+
+## A3. Floating Static Route: Standardweg mit Metrik 10, Ersatzweg mit Metrik 200 (eigene Topologie P1 - P3 direkt, Umweg über PB)
+$ ip -n ccp1 route show 192.168.30.0/24
+192.168.30.0/24 via 10.1.13.2 dev p13 metric 10 
+192.168.30.0/24 via 10.1.1.2 dev p1b metric 200 
+$ ip netns exec ccp1 traceroute -I -n -q1 -w1 -s 192.168.10.1 192.168.30.1 | sed 's/ms.*/ms/'
+traceroute to 192.168.30.1 (192.168.30.1), 30 hops max, 60 byte packets
+ 1  192.168.30.1  0.040 ms
+--- direkte Verbindung fällt aus
+$ ip -n ccp1 route show 192.168.30.0/24
+192.168.30.0/24 via 10.1.1.2 dev p1b metric 200 
+$ ip netns exec ccp1 traceroute -I -n -q1 -w1 -s 192.168.10.1 192.168.30.1 | sed 's/ms.*/ms/'
+traceroute to 192.168.30.1 (192.168.30.1), 30 hops max, 60 byte packets
+ 1  10.1.1.2  0.041 ms
+ 2  192.168.30.1  0.011 ms
+
+## B1. OSPFv2 (FRR): Dreieck R1-R2-R3, Punkt-zu-Punkt, Hello 1 s / Dead 4 s (verkürzt für das Labor), Kosten fest 10
+$ vt ccq1 -c 'show ip ospf neighbor' | awk '$1 ~ /^[0-9]/ {print "Nachbar " $1, "Zustand " $3, "Adresse " $6, "Anschluss " $7}'
+Nachbar 2.2.2.2 Zustand Full/- Adresse 10.2.12.2 Anschluss q12:10.2.12.1
+Nachbar 3.3.3.3 Zustand Full/- Adresse 10.2.13.2 Anschluss q13:10.2.13.1
+$ vt ccq1 -c 'show ip route ospf' | grep -E '^O' | sed -E 's/, weight [0-9]+//; s/, [0-9:]+$//'
+O   10.2.12.0/30 [110/10] is directly connected, q12
+O   10.2.13.0/30 [110/10] is directly connected, q13
+O>* 10.2.23.0/30 [110/20] via 10.2.12.2, q12
+O   192.168.1.0/24 [110/10] is directly connected, lan1
+O>* 192.168.3.0/24 [110/20] via 10.2.13.2, q13
+$ ip netns exec ccq1 ping -c1 -W1 -I 192.168.1.1 192.168.3.1 | grep transmitted
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+--- Kosten auf der direkten Verbindung R1-R3 (R1-Seite) auf 100 setzen: der Weg über R2 (Summe 30) wird billiger als direkt (100)
+$ vt ccq1 -c 'show ip route ospf' | grep -E '^O.*192.168.3.0' | sed -E 's/, weight [0-9]+//; s/, [0-9:]+$//'
+O>* 192.168.3.0/24 [110/30] via 10.2.12.2, q12
+$ ip netns exec ccq1 traceroute -n -q1 -w1 -s 192.168.1.1 192.168.3.1 | sed 's/ms.*/ms/'
+traceroute to 192.168.3.1 (192.168.3.1), 30 hops max, 60 byte packets
+ 1  10.2.12.2  0.037 ms
+ 2  192.168.3.1  0.014 ms
+--- Hello-Timer auf R1 (Verbindung zu R2) auf 3 s ändern, Dead 12 s: stimmt nicht mit R2 überein, die Nachbarschaft bricht ab
+$ vt ccq1 -c 'show ip ospf neighbor' | awk '$1 ~ /^[0-9]/ {print "Nachbar " $1, "Zustand " $3, "Anschluss " $7}'
+Nachbar 3.3.3.3 Zustand Full/- Anschluss q13:10.2.13.1
+$ grep -ciE 'hello.*mismatch|mismatch' /tmp/ccna/ccq2/frr.log | sed 's/^/Meldungen zu abweichenden Timern im Protokoll von R2: /'
+Meldungen zu abweichenden Timern im Protokoll von R2: 3
+
+## B2. Broadcast-Segment: Wahl von DR und BDR bei Prioritäten 200, 100, 1
+$ vt ccd1 show ip ospf neighbor (gekürzt)
+  ccd1: Nachbar 2.2.2.2, Priorität 100, Zustand Full, Rolle des Nachbarn Backup
+  ccd1: Nachbar 3.3.3.3, Priorität 1, Zustand Full, Rolle des Nachbarn DROther
+$ vt ccd2 show ip ospf neighbor (gekürzt)
+  ccd2: Nachbar 1.1.1.1, Priorität 200, Zustand Full, Rolle des Nachbarn DR
+  ccd2: Nachbar 3.3.3.3, Priorität 1, Zustand Full, Rolle des Nachbarn DROther
+$ vt ccd3 show ip ospf neighbor (gekürzt)
+  ccd3: Nachbar 1.1.1.1, Priorität 200, Zustand Full, Rolle des Nachbarn DR
+  ccd3: Nachbar 2.2.2.2, Priorität 100, Zustand Full, Rolle des Nachbarn Backup
+$ vt ccd1 -c 'show ip ospf interface d1' | grep -E 'State|Priority' | head -2
+  Transmit Delay is 1 sec, State DR, Priority 200
+--- DR (R1) fällt aus: BDR (R2) wird DR; R1 kommt später zurück und wird nicht erneut DR (kein Preemption)
+$ vt ccd2 -c 'show ip ospf interface d2' | grep -E 'State' | head -1
+  Transmit Delay is 1 sec, State DR, Priority 100
+$ vt ccd1 -c 'show ip ospf interface d1' | grep -E 'State' | head -1
+  Transmit Delay is 1 sec, State DROther, Priority 200
+
+## C. Auswahl der Route (Python-Modell): längster Präfix vor Administrative Distance vor Metrik (Lehrbuchwissen)
+192.168.3.9    -> ('192.168.3.0/24', 'statisch', 0)
+192.168.3.200  -> ('192.168.3.128/25', 'OSPF', 40)
+10.9.9.9       -> ('10.0.0.0/8', 'RIP', 2)
+8.8.8.8        -> ('0.0.0.0/0', 'statisch', 0)
+Administrative Distance (Lehrbuchwissen, Cisco-Standardwerte nicht im Container geprüft): {'verbunden': 0, 'statisch': 1, 'eBGP': 20, 'OSPF': 110, 'RIP': 120}
+Nicht ausgeführt: OSPFv3 und IPv6-Routing, EIGRP, BGP, IOS-Befehle (ip route, router ospf, show ip route).

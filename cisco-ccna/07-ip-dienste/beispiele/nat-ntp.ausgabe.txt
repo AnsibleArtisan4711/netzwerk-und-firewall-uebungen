@@ -1,0 +1,29 @@
+
+## 1. Ohne NAT: private Adressen werden im Internet nicht geroutet; der Server sieht keine Antwortmöglichkeit
+$ ip netns exec ccn1 curl -s -m 2 http://203.0.113.10:8080/ || echo 'keine Antwort (Zeitüberschreitung)'
+keine Antwort (Zeitüberschreitung)
+
+## 2. PAT (Masquerading): beide Hosts nutzen denselben lokalen Port 40000; der Router übersetzt die Adresse und weicht bei einem Portkonflikt auf einen anderen Port aus
+$ ip netns exec ccn1 curl -s -m 3 --local-port 40000 http://203.0.113.10:8080/
+Anfrage von 203.0.113.1:40000
+$ ip netns exec ccn2 curl -s -m 3 --local-port 40000 http://203.0.113.10:8080/
+Anfrage von 203.0.113.1:59869
+--- Verbindungstabelle des Routers (Quelle innen -> Quelle nach der Umsetzung)
+innen 192.168.1.12:40000 -> 203.0.113.10:8080 | Antwort kommt von 203.0.113.10:8080 an 203.0.113.1:59869
+innen 192.168.1.11:40000 -> 203.0.113.10:8080 | Antwort kommt von 203.0.113.10:8080 an 203.0.113.1:40000
+Der Server sieht beide Hosts mit der Adresse 203.0.113.1 und je einem anderen Quellport; die Zuordnung steht in der Verbindungstabelle.
+
+## 3. Portweiterleitung (DNAT): ein Gerät im Internet erreicht den internen Webserver über die öffentliche Adresse, Port 8081
+$ ip netns exec ccout curl -s -m 3 http://203.0.113.1:8081/
+Anfrage von 203.0.113.60:57042
+Der interne Server sieht den Client 203.0.113.60; erreicht wurde 192.168.1.11:8080 über die Adresse und den Port des Routers.
+
+## 4. NTP mit chrony: ein Zeitserver (Schicht 8, im Labor ohne Referenz) und ein Client fragt einmalig ab
+$ ip netns exec ccn1 timeout 15 chronyd -Q -x -f /tmp/ccna/ntp/client.conf 2>&1 | sed -E 's/^[0-9-]+T[0-9:]+Z //' | tail -2
+System clock wrong by 0.000005 seconds (ignored)
+chronyd exiting
+$ tshark -r ntp.pcap -d udp.port==1123,ntp -T fields -e ip.src -e ip.dst -e ntp.flags.mode -e ntp.stratum 2>/dev/null | awk -F'\t' '!seen[$0]++ {print $1 " -> " $2 "  Modus " $3 "  Schicht " $4}' | head -4
+203.0.113.1 -> 203.0.113.10  Modus 3  Schicht 0
+203.0.113.10 -> 203.0.113.1  Modus 4  Schicht 8
+Modus 3 = Client-Anfrage, Modus 4 = Server-Antwort; der Client hat den Server hinter dem NAT-Router (203.0.113.1) angesprochen, die Quelladresse im Mitschnitt ist die umgesetzte.
+Nicht ausgeführt: IOS-NAT-Befehle (ip nat inside/outside, ip nat pool, overload), NTP-Authentifizierung, NTP auf einem Cisco-Gerät.

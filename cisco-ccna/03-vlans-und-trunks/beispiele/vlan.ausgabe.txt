@@ -1,0 +1,44 @@
+
+## 1. 802.1Q-Rahmen von Hand gebaut (AF_PACKET) und im Mitschnitt gelesen: VLAN-ID und Priorität (PCP) stehen im Tag
+$ tshark -r v.pcap -Y vlan -T fields -e vlan.id -e vlan.priority -e vlan.etype 2>/dev/null | awk '{print "VLAN-ID " $1 "  Priorität " $2 "  EtherType darunter " $3}'
+VLAN-ID 10  Priorität 0  EtherType darunter 0x0800
+VLAN-ID 20  Priorität 0  EtherType darunter 0x0800
+VLAN-ID 30  Priorität 5  EtherType darunter 0x0800
+Das Tag (4 Byte) enthält TPID 0x8100, Priorität (3 Bit), DEI (1 Bit) und VLAN-ID (12 Bit, gültig 1 bis 4094). Ein Rahmen ohne Tag gehört im Trunk zum Native VLAN.
+
+## 2. Verhalten eines Switch-Ports als Python-Modell: Access, Trunk, Native VLAN, erlaubte VLANs
+Eingang Fa0/1 Tag None  -> VLAN 10     Gi0/1: mit Tag 10
+Eingang Fa0/2 Tag None  -> VLAN 20     Gi0/1: mit Tag 20
+Eingang Gi0/1 Tag None  -> VLAN 1      kein anderer Port in diesem VLAN
+Eingang Gi0/1 Tag 20    -> VLAN 20     Fa0/2: ohne Tag
+Eingang Gi0/1 Tag 30    -> VLAN None   verworfen
+Eingang Fa0/1 Tag 10    -> VLAN None   verworfen
+Modellannahme: Ein getaggter Rahmen an einem Access-Port wird verworfen; das echte Verhalten hängt vom Gerät ab und wurde nicht geprüft.
+Kernaussage: Frames in VLAN 10 erscheinen nie an einem Access-Port von VLAN 20; VLAN 30 wird am Trunk verworfen, weil es nicht erlaubt ist.
+
+## 3. VLAN-Plan prüfen (YAML) und daraus IOS-Text erzeugen (nur Text, nicht ausgeführt)
+VLAN 10    Verwaltung  192.168.10.0/24    ok
+VLAN 20    Labor       192.168.20.0/24    ID doppelt
+VLAN 20    Gaeste      192.168.20.128/25  ID doppelt
+VLAN 4095  Fehler      192.168.40.0/24    ID außerhalb 1 bis 4094
+Subnetze überlappen: Labor 192.168.20.0/24 und Gaeste 192.168.20.128/25
+
+Erzeugter IOS-Text für das gültige VLAN 10 und einen Trunk-Port (nicht ausgeführt):
+vlan 10
+ name Verwaltung
+interface GigabitEthernet0/1
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20
+ switchport trunk native vlan 99
+
+## 4. Inter-VLAN-Routing real: zwei Netze = zwei Broadcast-Domänen, nur der Router verbindet sie (Router-on-a-stick-Modell ohne Tags)
+$ ip netns exec ccva ping -c1 -W1 192.168.20.10 | grep -E 'transmitted'
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+$ ip netns exec ccva ip neigh show | awk '{print $1, $5}'
+192.168.10.1 62:45:c9:84:96:30
+Der Client in VLAN 10 kennt nur die MAC des Routers; die MAC des Clients in VLAN 20 bleibt ihm verborgen (ARP geht nicht über den Router).
+--- Ausfall der Router-Seite von VLAN 20
+$ ip netns exec ccva ping -c1 -W1 192.168.20.10 2>&1 | grep -E 'transmitted|Unreachable'
+From 192.168.10.1 icmp_seq=1 Destination Net Unreachable
+1 packets transmitted, 0 received, +1 errors, 100% packet loss, time 0ms
+Ohne Router-Schnittstelle in VLAN 20 meldet der Router „Destination Net Unreachable“; innerhalb von VLAN 10 bleibt alles erreichbar.

@@ -1,0 +1,29 @@
+
+## 1. Wahl des Masters: R1 (Priorität 110) gegen R2 (Priorität 90), virtuelle Adresse 192.168.10.1
+$ ip -n ccf1 -br addr | grep -E 'vrrp' | awk '{print "ccf1", $1, $3}'
+ccf1 vrrp.10@f1 192.168.10.1/24
+$ ip -n ccf2 -br addr | grep -E 'vrrp' | awk '{print "ccf2", $1, $3}'
+ccf2 vrrp.10@f2 
+(Wer die virtuelle Adresse trägt, ist Master; der andere Router hält sie nicht.)
+$ ip netns exec ccfc ping -c1 -W1 192.168.10.1 | grep -E 'transmitted'
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+$ ip netns exec ccfc ip neigh show 192.168.10.1 | awk '{print $1, $5}'
+192.168.10.1 00:00:5e:00:01:0a
+Die MAC-Adresse 00:00:5e:00:01:0a ist die virtuelle MAC von VRRP (00:00:5e:00:01:VRID, hier VRID 10 = 0x0a); sie bleibt beim Wechsel gleich, der Client muss seinen ARP-Eintrag nicht ändern.
+
+## 2. Meldungen im Mitschnitt: VRRP-Advertisements gehen an die Multicast-Adresse 224.0.0.18
+$ tshark -r vrrp.pcap -T fields -e ip.src -e ip.dst -e vrrp.prio -e vrrp.adver_int 2>/dev/null | sort -u | awk -F'\t' '{print $1 " -> " $2 "  Priorität " $3 "  Intervall " $4 " s"}'
+192.168.10.2 -> 224.0.0.18  Priorität 110  Intervall 1 s
+
+## 3. Ausfall des Masters: R1 verliert den Link, R2 übernimmt; Messung mit ping alle 0,2 s
+$ ip -n ccf2 -br addr | grep vrrp | awk '{print "ccf2", $1, $3}'
+ccf2 vrrp.10@f2 192.168.10.1/24
+Antworten vor dem Ausfall: 15, danach: 59; größte Lücke zwischen zwei Antworten: 3.3 s (rund 15 Pings mit 0,2 s)
+Die Umschaltzeit entspricht etwa drei Advertisement-Intervallen plus Versatz (Master-Down-Intervall), bei einem Intervall von 1 s also rund 3 bis 4 s.
+
+## 4. Rückkehr des alten Masters: bei aktiver Preemption übernimmt der Router mit der höheren Priorität wieder
+$ ip -n ccf1 -br addr | grep vrrp | awk '{print "ccf1", $1, $3}'
+ccf1 vrrp.10@f1 192.168.10.1/24
+$ ip -n ccf2 -br addr | grep vrrp | awk '{print "ccf2", $1, $3}'
+ccf2 vrrp.10@f2 
+HSRP (Cisco): Active/Standby, virtuelle MAC 0000.0c07.acXX (XX = Gruppe), Multicast 224.0.0.2 (v1) bzw. 224.0.0.102 (v2), Preempt standardmäßig aus. GLBP verteilt die Last auf mehrere Router. Beides ist hier nicht ausgeführt und nicht bestätigt.

@@ -1,0 +1,51 @@
+
+## 0. Ausgangslage: alles in Ordnung
+$ ./diag.sh
+alle Ebenen in Ordnung (HTTP 200)
+
+## 1. Fehler 1: falsches Standard-Gateway am Client (192.168.10.254 statt .1)
+$ ./diag.sh
+Ebene 3 (Gateway): 192.168.10.254 antwortet nicht auf Ping (falsche Adresse, falsche Maske oder Router-Schnittstelle down?)
+
+## 2. Fehler 2: Router-Schnittstelle zum Server ist ausgefallen
+$ ./diag.sh
+Ebene 3 (Ziel): Gateway erreichbar, aber 192.168.20.10 nicht (Routing, Rückweg oder Filter?)
+--- Eingrenzen (Divide-and-Conquer): wie weit kommt ein Paket?
+$ ip netns exec cccl traceroute -I -n -q1 -w1 -m 3 192.168.20.10 | sed 1d | awk '{print $1, $2}'
+1 192.168.10.1
+$ ip -n ccrt -br link show g1 | awk '{print $1, $2}' | sed 's/@if[0-9]*//'
+g1 DOWN
+
+## 3. Fehler 3: Server kennt den Rückweg nicht (Standardroute fehlt)
+$ ./diag.sh
+Ebene 3 (Ziel): Gateway erreichbar, aber 192.168.20.10 nicht (Routing, Rückweg oder Filter?)
+--- Eingrenzen: Hinweg ist in Ordnung (Router erreichbar), also den Rückweg des Servers prüfen
+$ ip -n ccsv route
+192.168.20.0/24 dev e0 proto kernel scope link src 192.168.20.10 
+
+## 4. Fehler 4: Filter auf dem Router blockiert TCP 8080
+$ ./diag.sh
+Ebene 4 (TCP): Ping geht, Port 8080 nicht (Dienst gestoppt oder Port gefiltert?)
+--- Eingrenzen: der Dienst läuft (Server hört auf 8080), also den Weg prüfen: Zähler der Filterregel auf dem Router
+$ ip netns exec ccsv ss -ltn | grep -c ':8080' | sed 's/^/Zuhörer auf Port 8080 am Server: /'
+Zuhörer auf Port 8080 am Server: 1
+$ ip netns exec ccrt nft list ruleset | grep -E 'dport 8080' | sed -E 's/^[ \t]+//; s/ bytes [0-9]+//'
+tcp dport 8080 drop
+
+## 5. Fehler 5: Webdienst auf dem Server gestoppt
+$ ./diag.sh
+Ebene 4 (TCP): Ping geht, Port 8080 nicht (Dienst gestoppt oder Port gefiltert?)
+--- Eingrenzen: kein Filter auf dem Weg, aber auch kein Zuhörer am Server
+$ ip netns exec ccsv ss -ltn | grep -c ':8080' | sed 's/^/Zuhörer auf Port 8080 am Server: /'
+Zuhörer auf Port 8080 am Server: 0
+
+## 6. Wieder in Ordnung
+$ ./diag.sh
+alle Ebenen in Ordnung (HTTP 200)
+
+## 7. Typische Auswertung: Fehlerbild und wahrscheinliche Ursache (Tabelle aus der Praxis, keine Messung)
+Ping auf Gateway geht nicht, Link ist up     -> falsche IP, Maske oder VLAN; Adresskonflikt
+Gateway geht, Ziel im anderen Netz nicht     -> fehlende Route oder Rückroute, ACL, NAT
+Ping geht, TCP-Verbindung nicht              -> Dienst gestoppt, Portfilter, falsche Portnummer
+Nur große Pakete scheitern                   -> MTU-Problem (Tunnel, Overlay), Fragmentierung blockiert
+Verbindung bricht sporadisch ab              -> Duplex-Mismatch (CRC-Fehler), doppelte IP, flappender Port, STP-Umschaltung

@@ -1,0 +1,46 @@
+
+## 1. DHCP ohne Relay scheitert: der Client im Netz 192.168.20.0/24 erreicht den Server im Netz 192.168.10.0/24 nicht per Broadcast
+Erwartung: nur DHCPDISCOVER an 255.255.255.255, kein DHCPOFFER (der Router leitet Broadcasts nicht weiter).
+$ dh 6 | grep -E 'DHCPDISCOVER|DHCPOFFER|DHCPREQUEST|DHCPACK|No DHCPOFFERS|bound|dhclient:' | sed -E 's/ interval [0-9]+//; s/ from 02.*//' | sort -u | head -5
+DHCPDISCOVER on e0 to 255.255.255.255 port 67 (xid=0xb4415b7e)
+dhclient: PREINIT
+
+## 2. Relay auf dem Router (dnsmasq --dhcp-relay), danach DORA im Mitschnitt
+$ dh 8 | grep -E 'DHCPOFFER|DHCPACK|dhclient:' | sed -E 's/ interval [0-9]+//' | sort -u
+DHCPACK of 192.168.20.139 from 192.168.20.1 (xid=0xf3a3ec2c)
+DHCPOFFER of 192.168.20.139 from 192.168.20.1
+dhclient: BOUND -> Adresse 192.168.20.139/255.255.255.0, Router 192.168.20.1, DNS 192.168.10.2, Domäne lab.example, Lease 120 s, Server 192.168.10.2
+dhclient: PREINIT
+$ tshark -r d.pcap -T fields -e ip.src -e ip.dst -e bootp.option.dhcp -e bootp.ip.relay 2>/dev/null | awk -F'\t' '!seen[$0]++ {print $1 " -> " $2 "  Typ " $3 "  giaddr " $4}'
+192.168.20.1 -> 192.168.10.2  Typ 1  giaddr 192.168.20.1
+192.168.10.2 -> 192.168.20.1  Typ 2  giaddr 192.168.20.1
+192.168.20.1 -> 192.168.10.2  Typ 3  giaddr 192.168.20.1
+192.168.10.2 -> 192.168.20.1  Typ 5  giaddr 192.168.20.1
+(Doppelte Pakete des Relays sind zusammengefasst.) Typ 1 = Discover, 2 = Offer, 3 = Request, 5 = Ack. Auf dem Server-Anschluss steht die Adresse des Relays (giaddr) als Quelle, nicht der Client.
+$ cat /tmp/ccna/leases | awk '{print $2, $3}'
+02:00:00:00:00:61 192.168.20.139
+
+## 3. Reservierung: ein Gerät mit der MAC 02:00:00:00:00:99 bekommt immer 192.168.20.50
+$ dh 8 | grep -E 'dhclient:' | sed -E 's/, Lease.*//'
+dhclient: PREINIT
+dhclient: BOUND -> Adresse 192.168.20.50/255.255.255.0, Router 192.168.20.1, DNS 192.168.10.2, Domäne lab.example
+
+## 4. Namensauflösung mit dig gegen den DNS-Server 192.168.10.2
+$ ip netns exec cccli dig +short +time=2 +tries=1 @192.168.10.2 www.lab.example A | sed 's/^/  /'
+  192.168.10.80
+$ ip netns exec cccli dig +short +time=2 +tries=1 @192.168.10.2 www.lab.example AAAA | sed 's/^/  /'
+  2001:db8:10::80
+$ ip netns exec cccli dig +short +time=2 +tries=1 @192.168.10.2 web.lab.example CNAME | sed 's/^/  /'
+  www.lab.example.
+$ ip netns exec cccli dig +short +time=2 +tries=1 @192.168.10.2 lab.example MX | sed 's/^/  /'
+  10 mail.lab.example.
+$ ip netns exec cccli dig +short +time=2 +tries=1 @192.168.10.2 lab.example TXT | sed 's/^/  /'
+  "v=spf1 mx -all"
+$ ip netns exec cccli dig +short +time=2 +tries=1 @192.168.10.2 lab.example NS | sed 's/^/  /'
+  ns1.lab.example.
+$ ip netns exec cccli dig +short +time=2 +tries=1 @192.168.10.2 80.10.168.192.in-addr.arpa PTR | sed 's/^/  /'
+  www.lab.example.
+$ ip netns exec cccli dig +time=2 +tries=1 @192.168.10.2 gibtesnicht.lab.example A | grep -E 'status:' | sed -E 's/.*(status: [A-Z]+).*/\1/'
+status: NXDOMAIN
+Hinweis: Der PTR-Eintrag für 80.10.168.192.in-addr.arpa wird von dnsmasq automatisch aus dem host-record erzeugt.
+Nicht ausgeführt: DHCPv6, SLAAC-Mitschnitt, „ip helper-address“ und „ip dhcp pool“ auf einem Cisco-Gerät.
